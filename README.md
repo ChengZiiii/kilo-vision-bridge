@@ -33,6 +33,18 @@ After install, restart Kilo. The plugin registers the `vision-agent` subagent an
 >
 > **Where does the package itself live?** `kilo plugin` downloads and manages the package under `~/.cache/kilo/packages/<name>@<tag>/` — Kilo's own package store, by official design. Do not move or delete it manually; use `kilo plugin` for upgrades (e.g. `kilo plugin kilo-vision-bridge --global --force`). The package store is a cache: clearing `~/.cache/kilo` only forces a re-download on the next `kilo plugin` run.
 
+### Updating
+
+```bash
+# update to a specific version — replaces the config entry and re-downloads the package
+kilo plugin kilo-vision-bridge@0.1.2 --global
+
+# or force-reinstall the current spec (replaces an existing entry of the same version)
+kilo plugin kilo-vision-bridge --global --force
+```
+
+Restart Kilo afterwards. The update is managed entirely by `kilo plugin` — the config entry and the package store are both handled by the official installer, so there is nothing else to clean up manually.
+
 ### Uninstalling
 
 `kilo plugin` has no uninstall subcommand (Kilo's `kilo uninstall` removes Kilo itself, not plugins), so removal is manual — two steps:
