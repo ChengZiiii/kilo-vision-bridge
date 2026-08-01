@@ -1,6 +1,6 @@
 {
   "name": "kilo-vision-bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Dynamic visual-response skill for Kilo. Registers the native vision_analyze tool (model configured by the user via the Kilo Code agent model override on vision-agent) with the vision-agent subagent as fallback, and teaches a text-only orchestrator to extract visual intent, design a task-specific JSON response template, and delegate via the tool (or subagent).",
   "type": "module",
   "main": "./dist/index.js",
