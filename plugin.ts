@@ -76,6 +76,12 @@ type ModelsCatalog = Record<string, RawProvider>
 
 const VISION_MODELS_SCRIPT = join(dataDir, "scripts", "vision-models.mjs")
 let registeredModels = new Map<string, VisionModelEntry>()
+// RV-1/RV-2: folded (toLowerCase) "provider/model" keys of registered vision
+// models; agent-name -> vision-capable map; top-level default capability.
+// Populated in the config hook and read by the messages/system transforms.
+let visionModelKeys = new Set<string>()
+let agentVisionCapable = new Map<string, boolean>()
+let defaultVisionCapable = false
 const IMAGE_TMP_DIR = join(tmpdir(), "kilo-vision-bridge")
 
 const PERMISSION = {
@@ -348,6 +354,31 @@ function configuredModelVisionCapable(
   return Boolean(match && isVisionModel(match))
 }
 
+// RV-1: resolve whether a user message's handling model is vision-capable.
+// Order: (1) message info.model (providerID/modelID) folded vs visionModelKeys;
+// (2) message info.agent vs agentVisionCapable; (3) defaultVisionCapable.
+// UserMessage.model.modelID is the inline message type's field (NOT the Model
+// type, which uses `id`).
+function userMessageVisionCapable(info: {
+  role: string
+  agent?: string
+  model?: { providerID?: string; modelID?: string }
+}): boolean {
+  const m = info.model
+  if (
+    m &&
+    typeof m.providerID === "string" &&
+    typeof m.modelID === "string" &&
+    (m.providerID !== "" || m.modelID !== "")
+  ) {
+    return visionModelKeys.has(`${m.providerID}/${m.modelID}`.toLowerCase())
+  }
+  if (typeof info.agent === "string" && agentVisionCapable.has(info.agent)) {
+    return Boolean(agentVisionCapable.get(info.agent))
+  }
+  return defaultVisionCapable
+}
+
 function saveImagePart(
   url: string,
   sessionID: string,
@@ -429,6 +460,28 @@ const plugin: Plugin = async () => ({
       dynamicModels.map((m) => [`${m.provider}/${m.model_id}`, m])
     )
 
+  // RV-1/RV-2/RV-3: build per-agent capability state from the registered
+  // vision model set and each configured agent's model. Built BEFORE the
+  // subagent-registration loop so it captures user-configured agents; the
+  // vision-* subagents registered below are harmless either way since their
+  // own messages carry a vision info.model that wins first in the transform.
+  visionModelKeys = new Set(
+    [...registeredModels.keys()].map((k) => k.toLowerCase()),
+  )
+  defaultVisionCapable = configuredModelVisionCapable(cfg.model, catalog, cfg as ConfigLike)
+  agentVisionCapable = new Map()
+  const agentsSection = (cfg as ConfigLike & {
+    agent?: Record<string, { model?: string } | undefined>
+  }).agent ?? {}
+  for (const [name, entry] of Object.entries(agentsSection)) {
+    if (entry && typeof entry.model === "string") {
+      agentVisionCapable.set(
+        name,
+        configuredModelVisionCapable(entry.model, catalog, cfg as ConfigLike),
+      )
+    }
+  }
+
   // Register the skill in-place: push the package data dir (which contains
   // SKILL.md) onto config.skills.paths. OpenCode scans **/SKILL.md under each
   // path, so this makes the vision skill discoverable straight out of the
@@ -444,15 +497,12 @@ const plugin: Plugin = async () => ({
     cfgAny.skills.paths.push(dataDir)
   }
 
-  // Startup gate (B): if the configured default orchestrator model is
-  // itself vision-capable, skip registering the vision-* subagents — they
-  // would be redundant. The skill still loads via the skills.paths entry
-  // pushed above and self-gates in its body ("When NOT to invoke").
-  if (configuredModelVisionCapable(cfg.model, catalog, cfg as ConfigLike)) {
-    registeredModels = new Map()
-    return
-  }
-
+  // RV-3: vision-* subagents are ALWAYS registered. The previous global skip
+  // (early-return when the top-level model was vision-capable) is removed — a
+  // multimodal main model coexisting with a text-only agent needs the
+  // subagents. Non-delegation for a multimodal model is enforced by the
+  // messages/system transforms and the skill's "When NOT to invoke" self-gate,
+  // not by withholding registration.
     cfg.agent ??= {}
     for (const e of dynamicModels) {
       const name = subagentName(e)
@@ -476,6 +526,10 @@ const plugin: Plugin = async () => ({
   "experimental.chat.messages.transform": async (_input, output) => {
     for (const m of output.messages) {
       if (m.info.role !== "user") continue
+      // RV-1: a vision-capable user message keeps image parts untouched
+      // (native path). The rewrite loop below then runs only for text-only
+      // messages.
+      if (userMessageVisionCapable(m.info)) continue
       for (const part of m.parts) {
         if (part.type !== "file") continue
         if (!part.mime) continue
@@ -511,7 +565,25 @@ const plugin: Plugin = async () => ({
   // Persisted model choice is still read by the plugin so the orchestrator
   // can avoid re-asking. Model listing and persistence changes are handled
   // by scripts/vision-models.mjs, not a plugin-injected tool.
-  "experimental.chat.system.transform": async (_input, output) => {
+  "experimental.chat.system.transform": async (input, output) => {
+    // RV-2: input.model is Model (has providerID + id, NOT modelID).
+    // Reuse the folded visionModelKeys lookup (RB-4 MODIFIED).
+    const model = input.model
+    const capable = Boolean(
+      model &&
+        typeof model.providerID === "string" &&
+        typeof model.id === "string" &&
+        visionModelKeys.has(`${model.providerID}/${model.id}`.toLowerCase()),
+    )
+    if (capable) {
+      output.system.push(
+        "[vision:native] You receive image parts natively in this session. " +
+          "Inspect images directly from the message. Do NOT use the vision skill, " +
+          "do NOT delegate visual tasks to a vision-* subagent, and ignore any " +
+          "[vision:model-script] / [vision:model-choice] instructions.",
+      )
+      return
+    }
     output.system.push(
       `[vision:model-script] Query available image-capable vision models with: node ${VISION_MODELS_SCRIPT}. ` +
         `Persist a choice with: node ${VISION_MODELS_SCRIPT} --model <provider/model>. ` +
