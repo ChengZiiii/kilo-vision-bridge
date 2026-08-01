@@ -1,6 +1,6 @@
 import type { Plugin } from "@kilocode/plugin"
 import { tool } from "@kilocode/plugin"
-import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, cpSync } from "node:fs"
+import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join, resolve, isAbsolute } from "node:path"
 import { homedir, tmpdir } from "node:os"
@@ -13,13 +13,14 @@ import {
   postVisionRequest,
 } from "./src/vision-http.ts"
 
-// Resolve the data dir (skill source + skills.paths entry) relative to the
-// bundle. When run from source, `import.meta.url` is plugin.ts and SKILL.md
-// sits next to it. When run from the built dist/index.js, the npm package
-// root (one level up from dist/) has SKILL.md. Plugin-directory installs (a
-// lone dist/index.js copied into ~/.config/kilo/plugin/) have no SKILL.md
-// sibling, so the lookup falls back to bundleDir harmlessly: the skill sync
-// finds no source and the skills.paths scan finds no SKILL.md.
+// Resolve the data dir (the skills.paths entry pointing at SKILL.md) relative
+// to the bundle. When run from source, `import.meta.url` is plugin.ts and
+// SKILL.md sits next to it. When run from the built dist/index.js, the npm
+// package root (one level up from dist/) has SKILL.md. Plugin-directory
+// installs (a lone dist/index.js copied into ~/.config/kilo/plugin/) have no
+// SKILL.md sibling, so the lookup falls back to bundleDir harmlessly: the
+// skills.paths scan finds no SKILL.md and Method B installs copy SKILL.md
+// manually per the README.
 const bundleDir = dirname(fileURLToPath(import.meta.url))
 const candidateDirs = [bundleDir, join(bundleDir, "..")]
 const dataDir =
@@ -412,37 +413,6 @@ function mimeToExt(mime: string): string {
   return "png"
 }
 
-// Sync SKILL.md into the default-scanned skills directory at module import
-// time. OpenCode's plugin installer suppresses npm postinstall
-// (ignoreScripts:true), so a postinstall hook cannot be relied on. Doing the
-// sync here — at module load, which runs before skill discovery on the same
-// launch — ensures the skill is discoverable on the FIRST launch after
-// install, not just the second.
-//
-// Sync logic (handles upgrades, stale files, and previous-version installs):
-//   1. Read the source SKILL.md bytes from the installed package.
-//   2. If the destination already exists and its bytes are identical, the
-//      skill is already in sync — skip the write (avoids unnecessary disk
-//      I/O and filesystem-watcher churn on every launch).
-//   3. If the destination is missing or its content differs (e.g. the
-//      plugin was upgraded and SKILL.md changed, or a previous version's
-//      file is stale), overwrite it with the current source.
-function ensureSkillInstalled() {
-  const src = join(dataDir, "SKILL.md")
-  if (!existsSync(src)) return
-  const destDir = join(kiloConfigDir(), "skills", "vision")
-  const dest = join(destDir, "SKILL.md")
-  try {
-    const srcBytes = readFileSync(src)
-    if (existsSync(dest) && srcBytes.equals(readFileSync(dest))) return
-    mkdirSync(destDir, { recursive: true })
-    cpSync(src, dest)
-  } catch {
-    // Non-fatal: the config hook's skills.paths push is a fallback.
-  }
-}
-ensureSkillInstalled()
-
 // VT-1/VT-2/VT-5: the native vision_analyze tool. execute runs in-process:
 // model configured (from agent["vision-agent"].model) -> endpoint + key
 // resolution -> read images -> OpenAI-compatible or Anthropic-shaped chat
@@ -562,12 +532,12 @@ const plugin: Plugin = async () => ({
     }
   }
 
-  // Register the skill in-place: push the package data dir (which contains
-  // SKILL.md) onto config.skills.paths. OpenCode scans **/SKILL.md under each
-  // path, so this makes the vision skill discoverable straight out of the
-  // installed npm package — no postinstall copy, no symlink. OpenCode's plugin
-  // installer runs npm with ignoreScripts:true, so a postinstall hook cannot
-  // be relied on (see kilo-vision-bridge README "Troubleshooting").
+  // Register the skill for discovery: push the package data dir (which
+  // contains SKILL.md) onto config.skills.paths. Kilo scans **/SKILL.md under
+  // each path, so the vision skill resolves straight out of the installed
+  // package — no postinstall copy, no symlink, no module-load sync. This is
+  // the only skill discovery mechanism; Method B (single-file) installs copy
+  // SKILL.md manually per the README.
   const cfgAny = cfg as ConfigLike & {
     skills?: { paths?: string[] }
   }
