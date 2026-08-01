@@ -127,6 +127,9 @@ function xdgPath(kind: string, fallback: string): string {
   return process.env[kind] ?? join(homeDir(), fallback)
 }
 
+// Retained intentionally (no current callers): the canonical kilo config
+// dir resolver. Formerly used by the removed module-load skill mirror sync
+// (RB-9); kept as the natural home for any future config-dir path needs.
 function kiloConfigDir(): string {
   return resolve(
     process.env.KILO_CONFIG_DIR ??
