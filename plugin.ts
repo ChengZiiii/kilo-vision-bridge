@@ -134,8 +134,15 @@ function readPersistedChoice(): string | undefined {
     const file = visionChoiceFile()
     if (!existsSync(file)) return
     const raw = readFileSync(file, "utf8").trim()
-    const model = registeredModels.get(raw)
-    if (model?.supportsImage) return raw
+    const folded = raw.toLowerCase()
+    // Fold the persisted line against registeredModels keys so mixed-case
+    // ids still resolve; return the canonical registered key.
+    for (const key of registeredModels.keys()) {
+      if (key.toLowerCase() === folded) {
+        const model = registeredModels.get(key)
+        if (model?.supportsImage) return key
+      }
+    }
   } catch {
     return
   }
@@ -226,29 +233,45 @@ function modelCapabilities(model: RawModel): { supportsImage: boolean } {
   return { supportsImage }
 }
 
+// Case-insensitive id matching (RB-4): the cached catalog (~/.cache/kilo/
+// models.json) and Kilo configs may use different casings for the same
+// provider/model id (e.g. catalog stores `MiniMax-M3` while the config writes
+// `minimax-m3`). All lookups fold ids to lowercase; outputs (registeredModels
+// keys, subagent names) keep the catalog's canonical casing.
+
+function foldKey(record: Record<string, unknown>, key: string): string {
+  const folded = key.toLowerCase()
+  const existing = Object.keys(record).find((k) => k.toLowerCase() === folded)
+  return existing ?? key
+}
+
 function providerModels(
   providerID: string,
   catalog: ModelsCatalog,
   config: ConfigLike,
 ): Record<string, RawModel> {
   const configured = providerConfig(config, providerID)
+  const catalogProvider =
+    catalog[providerID] ?? catalog[String(providerID).toLowerCase()] ?? {}
   const models: Record<string, RawModel> = {
-    ...(catalog[providerID]?.models ?? {}),
+    ...(catalogProvider.models ?? {}),
   }
 
   for (const [key, override] of Object.entries(configured.models ?? {})) {
     const id = override.id ?? key
-    models[key] = mergeModel(models[id] ?? models[key], override)
+    const targetKey = foldKey(models, id)
+    models[targetKey] = mergeModel(models[targetKey], override)
   }
 
   return models
 }
 
 function modelAllowed(providerConfig: ProviderConfig, modelID: string): boolean {
-  const blacklist = stringArray(providerConfig.blacklist)
-  const whitelist = stringArray(providerConfig.whitelist)
-  if (blacklist.includes(modelID)) return false
-  if (whitelist.length > 0 && !whitelist.includes(modelID)) return false
+  const folded = modelID.toLowerCase()
+  const blacklist = stringArray(providerConfig.blacklist).map((id) => id.toLowerCase())
+  const whitelist = stringArray(providerConfig.whitelist).map((id) => id.toLowerCase())
+  if (blacklist.includes(folded)) return false
+  if (whitelist.length > 0 && !whitelist.includes(folded)) return false
   return true
 }
 
@@ -291,7 +314,7 @@ function configuredModelVisionCapable(
   const parts = splitModel(model)
   if (!parts) return false
   const models = providerModels(parts.provider, catalog, config)
-  const match = models[parts.modelID]
+  const match = models[foldKey(models, parts.modelID)]
   return Boolean(match && isVisionModel(match))
 }
 
