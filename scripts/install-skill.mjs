@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { cpSync, existsSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 
 // Resolve the bundled SKILL.md relative to this script. When run from the
@@ -17,16 +18,16 @@ if (!existsSync(src)) {
   process.exit(0)
 }
 
-// Destination: ~/.config/opencode/skills/vision/SKILL.md
-// Respect OPENCODE_CONFIG_DIR and XDG_CONFIG_HOME like opencode does.
+// Destination: ~/.config/kilo/skills/vision/SKILL.md
+// Respect KILO_CONFIG_DIR and XDG_CONFIG_HOME like kilo does.
 const configDir =
-  process.env.OPENCODE_CONFIG_DIR ||
+  process.env.KILO_CONFIG_DIR ||
   (process.env.XDG_CONFIG_HOME
-    ? join(process.env.XDG_CONFIG_HOME, "opencode")
-    : join(process.env.HOME || "~", ".config", "opencode"))
+    ? join(process.env.XDG_CONFIG_HOME, "kilo")
+    : join(homedir(), ".config", "kilo"))
 const destDir = join(configDir, "skills", "vision")
 const dest = join(destDir, "SKILL.md")
 
 mkdirSync(destDir, { recursive: true })
 cpSync(src, dest)
-console.log(`opencode-vision: installed skill to ${dest}`)
+console.log(`kilo-vision-bridge: installed skill to ${dest}`)
