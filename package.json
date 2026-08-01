@@ -49,11 +49,14 @@
     "url": "https://github.com/chengsongren/kilo-vision-bridge/issues"
   },
   "peerDependencies": {
-    "@kilocode/plugin": "^1.4.7"
+    "@kilocode/plugin": "^7.4.0"
   },
   "devDependencies": {
-    "@kilocode/plugin": "^1.4.7",
+    "@kilocode/plugin": "^7.4.0",
     "@types/node": "^22.13.9",
     "typescript": "^5.8.2"
+  },
+  "engines": {
+    "opencode": "^7.0.0"
   }
 }
