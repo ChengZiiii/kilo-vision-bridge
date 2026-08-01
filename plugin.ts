@@ -95,15 +95,6 @@ const PERMISSION = {
   },
 }
 
-function subagentName(entry: Pick<VisionModelEntry, "provider" | "model_id">): string {
-  return (
-    "vision-" +
-    entry.provider +
-    "-" +
-    entry.model_id.replace(/[/:]/g, "-")
-  )
-}
-
 function homeDir(): string {
   return process.env.KILO_TEST_HOME ?? homedir()
 }
@@ -460,11 +451,11 @@ const plugin: Plugin = async () => ({
     dynamicModels.map((m) => [`${m.provider}/${m.model_id}`, m])
   )
 
-  // RV-1/RV-2/RV-3: build per-agent capability state from the registered
+  // RV-1/RV-2: build per-agent capability state from the registered
   // vision model set and each configured agent's model. Built BEFORE the
-  // subagent-registration loop so it captures user-configured agents; the
-  // vision-* subagents registered below are harmless either way since their
-  // own messages carry a vision info.model that wins first in the transform.
+  // single vision-agent registration below so it captures user-configured
+  // agents; the subagent's own messages carry a vision info.model that wins
+  // first in the transform.
   visionModelKeys = new Set(
     [...registeredModels.keys()].map((k) => k.toLowerCase()),
   )
@@ -497,27 +488,29 @@ const plugin: Plugin = async () => ({
     cfgAny.skills.paths.push(dataDir)
   }
 
-  // RV-3: vision-* subagents are ALWAYS registered. The previous global skip
-  // (early-return when the top-level model was vision-capable) is removed — a
-  // multimodal main model coexisting with a text-only agent needs the
-  // subagents. Non-delegation for a multimodal model is enforced by the
-  // messages/system transforms and the skill's "When NOT to invoke" self-gate,
-  // not by withholding registration.
+  // RV-5: register a SINGLE configurable vision-agent subagent whose model is
+  // the persisted choice (canonical, folded match). No choice -> no
+  // registration. The previous always-register loop (one vision-* subagent per
+  // discovered model) is gone; the skill instructs the orchestrator to pick a
+  // model first when none is persisted.
   cfg.agent ??= {}
-  for (const e of dynamicModels) {
-    const name = subagentName(e)
-    cfg.agent[name] ??= {}
-    Object.assign(cfg.agent[name], {
-      description: `Visual judgment subagent (${e.name}). Consumes a prompt-authored visual task with image paths and a task-specific JSON response template. Not coupled to any screenshot tool or UI framework - works with locally stored images supported by the model.`,
-      mode: "subagent",
-      model: `${e.provider}/${e.model_id}`,
-      temperature: 0.1,
-      prompt: bodyTpl
-        .replaceAll("{{model_name}}", e.name)
-        .replaceAll("{{provider}}", e.provider)
-        .replaceAll("{{model_id}}", e.model_id),
-      permission: PERMISSION,
-    })
+  const chosen = readPersistedChoice()
+  if (chosen) {
+    const entry = registeredModels.get(chosen)
+    if (entry) {
+      cfg.agent["vision-agent"] ??= {}
+      Object.assign(cfg.agent["vision-agent"], {
+        description: `Visual judgment subagent (${entry.name}). Consumes a prompt-authored visual task with image paths and a task-specific JSON response template. Not coupled to any screenshot tool or UI framework - works with locally stored images supported by the model.`,
+        mode: "subagent",
+        model: chosen,
+        temperature: 0.1,
+        prompt: bodyTpl
+          .replaceAll("{{model_name}}", entry.name)
+          .replaceAll("{{provider}}", entry.provider)
+          .replaceAll("{{model_id}}", entry.model_id),
+        permission: PERMISSION,
+      })
+    }
   }
   },
 
