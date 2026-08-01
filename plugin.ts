@@ -626,7 +626,8 @@ const plugin: Plugin = async () => ({
   },
 
   // Source D: materialize user-dropped images as stable paths that the
-  // orchestrator can pass to a vision subagent through the task tool.
+  // orchestrator can pass to the vision_analyze tool (or the vision-agent
+  // subagent fallback).
   "experimental.chat.messages.transform": async (_input, output) => {
     for (const m of output.messages) {
       if (m.info.role !== "user") continue
@@ -668,9 +669,10 @@ const plugin: Plugin = async () => ({
 
   // The system transform tells the orchestrator how images are routed in
   // this session: a vision-capable model handles them natively, while a
-  // text-only model sees [vision:dropped-image] markers and delegates to the
-  // vision-agent subagent (model configured by the user via the Kilo Code
-  // agent model override). No model script or picker is involved.
+  // text-only model sees [vision:dropped-image] markers and delegates via
+  // the vision_analyze tool (falling back to the vision-agent subagent).
+  // The model is configured by the user via the Kilo Code agent model
+  // override on vision-agent. No model script or picker is involved.
   "experimental.chat.system.transform": async (input, output) => {
     // RV-2: input.model is Model (has providerID + id, NOT modelID).
     // Reuse the folded visionModelKeys lookup (RB-4 MODIFIED).
@@ -690,8 +692,9 @@ const plugin: Plugin = async () => ({
       return
     }
     // Text-only path: inject nothing. The vision skill (SKILL.md) instructs
-    // the orchestrator to delegate to the vision-agent subagent, whose model
-    // is configured by the user via the Kilo Code agent model override.
+    // the orchestrator to call the vision_analyze tool first and fall back
+    // to the vision-agent subagent on provider errors; the model is
+    // configured by the user via the Kilo Code agent model override.
   },
 })
 

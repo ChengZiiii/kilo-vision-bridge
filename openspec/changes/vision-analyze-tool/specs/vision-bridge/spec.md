@@ -127,13 +127,21 @@ subagent.
 **Requirement:** The tool `SHALL` resolve the vision provider's base URL in
 this order: (1) `provider.<id>.options.baseURL` from config, (2) an
 endpoint from the provider's environment variables when the catalog declares
-them (e.g. `MINIMAX_API_HOST`), (3) a built-in map of known OpenAI-compatible
-endpoints, (4) otherwise a clear error. The API key `SHALL` resolve from the
-provider's `auth.json` entry (type `api`) first, then from the provider's
-declared environment variables. The request `SHALL` use the OpenAI-compatible
-`/chat/completions` shape with image parts as `data:` base64 URLs. When
-resolution or the request fails, the error `SHALL` be descriptive enough for
-the skill's fallback (VT-4) and for the user.
+them (e.g. `MINIMAX_API_HOST`), (3) the provider's catalog `api` field,
+else a built-in map of known vision endpoints, (4) otherwise a clear error.
+The API key `SHALL` resolve from the provider's `auth.json` entry (type
+`api`) first, then from the provider's declared environment variables. The
+request `SHALL` use either the OpenAI-compatible `/chat/completions` shape
+(image parts as `data:` base64 URLs) or the Anthropic-style `/messages`
+shape (image parts as base64 content blocks), selected by the resolved
+endpoint URL: endpoints whose URL marks an Anthropic-compatible base (e.g.
+containing `/anthropic`) `SHALL` use the Anthropic shape, all others the
+OpenAI shape. The shape split is required because some vision endpoints
+(e.g. `api.minimaxi.com`) drop `data:` `image_url` parts on their
+OpenAI-compatible endpoint while their Anthropic-style endpoint delivers
+them (verified during the change's spike). When resolution or the request
+fails, the error `SHALL` be descriptive enough for the skill's fallback
+(VT-4) and for the user.
 
 #### Scenario: Config baseURL wins
 
@@ -147,9 +155,24 @@ Given a provider in the built-in endpoint map and no config/env override,
 when the tool resolves the endpoint,
 then the mapped default is used.
 
+#### Scenario: Anthropic-style endpoint uses the /messages shape
+
+Given a resolved base URL of `https://api.minimaxi.com/anthropic/v1`,
+when the tool builds the request,
+then the request is an Anthropic-style POST to `<base>/messages` with
+base64 image content blocks and an `x-api-key` header.
+
+#### Scenario: OpenAI-compatible endpoint uses the chat/completions shape
+
+Given a resolved base URL without an Anthropic marker,
+when the tool builds the request,
+then the request is an OpenAI-compatible POST to `<base>/chat/completions`
+with `data:` base64 `image_url` parts and a `Bearer` Authorization header.
+
 #### Scenario: Unresolvable endpoint errors
 
-Given a provider with no config baseURL, no env host, and no map entry,
+Given a provider with no config baseURL, no env host, no catalog `api`
+field, and no map entry,
 when the tool resolves the endpoint,
 then it returns a descriptive error and no request is made.
 

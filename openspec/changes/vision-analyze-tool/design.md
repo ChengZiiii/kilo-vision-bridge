@@ -62,15 +62,22 @@ tool: {
 Order of resolution for the vision model's `provider`:
 1. `provider.<id>.options.baseURL` in config (user override wins).
 2. `MINIMAX_API_HOST`-style env when the provider's env list declares it.
-3. Built-in map of known OpenAI-compatible endpoints (e.g.
-   `minimax-cn-coding-plan` -> `https://api.minimaxi.com/v1`).
-4. Unresolved -> clear error; the skill then falls back to the subagent
+3. The provider's catalog `api` field (e.g. the models.dev catalog entry
+   for `minimax-cn-coding-plan` declares
+   `api: https://api.minimaxi.com/anthropic/v1`).
+4. Built-in map of known vision endpoints (minimax family →
+   anthropic-style base URLs; see request-shape section above).
+5. Unresolved -> clear error; the skill then falls back to the subagent
    (Kilo's own provider plumbing may succeed where the HTTP path failed).
 
 API key: `readAuthData()` entry for the provider (type `api`) first, then
 env vars from the provider's `env` list (e.g. `MINIMAX_API_KEY`).
 
-Request shape (OpenAI-compatible `/chat/completions`):
+Request shape (two styles, selected by the resolved endpoint URL —
+`src/vision-http.ts` `visionShapeFor`):
+
+- **OpenAI-compatible** (`<base>/chat/completions`), used when the base URL
+  carries no `/anthropic` marker:
 
 ```json
 {
@@ -86,12 +93,40 @@ Request shape (OpenAI-compatible `/chat/completions`):
 }
 ```
 
+- **Anthropic-style** (`<base>/messages`, e.g.
+  `https://api.minimaxi.com/anthropic/v1/messages`), used when the base URL
+  contains `/anthropic`:
+
+```json
+{
+  "model": "<modelID>",
+  "max_tokens": 2048,
+  "temperature": 0.1,
+  "messages": [{
+    "role": "user",
+    "content": [
+      { "type": "text", "text": "<question>" },
+      { "type": "image", "source": { "type": "base64", "media_type": "<mime>", "data": "..." } }
+    ]
+  }]
+}
+```
+
+Rationale for the split (spike 1.3): the reference provider
+`minimax-cn-coding-plan` / MiniMax-M3 silently drops `data:` `image_url`
+parts on its OpenAI-compatible `/v1/chat/completions` endpoint (the model
+answers "no image provided"), while its Anthropic-style
+`/anthropic/v1/messages` endpoint delivers base64 images. The shape is
+therefore a function of the resolved endpoint URL, not a constant. The
+built-in endpoint map (minimax family) points at the anthropic-style base
+URLs so the primary path works out of the box.
+
 - One image per user content message (multi-image via multiple messages),
   mime inferred from the path extension.
 - `ctx.abort` wired to the fetch signal; ~60s timeout.
-- Response parsed from `choices[0].message.content`; a light JSON sanity
-  check (parse attempt) with a descriptive error on failure (the skill
-  retries once per Step 6 anyway).
+- Response parsed from `choices[0].message.content` (OpenAI) or
+  `content[]` text blocks (Anthropic); a light JSON sanity check with a
+  descriptive error on failure (the skill retries once per Step 6 anyway).
 
 ## 5. Core extracted for tests
 
