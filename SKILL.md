@@ -78,11 +78,11 @@ When a tool result contains an `attachments[]` entry with `mime` starting `image
 
 When the user drops an image into the chat, the vision plugin's `experimental.chat.messages.transform` hook materializes it as a file in the operating system's temporary directory and surfaces the path to the orchestrator. For every user-message `FilePart` with `type: "file"` and `mime: "image/*"`, the hook:
 
-1. Saves the bytes under the plugin's `opencode-vision` temporary subdirectory via `writeFileSync` (data URLs) or `copyFileSync` (file paths). Image bytes never touch the shell.
+1. Saves the bytes under the plugin's `kilo-vision-bridge` temporary subdirectory via `writeFileSync` (data URLs) or `copyFileSync` (file paths). Image bytes never touch the shell.
 2. Replaces the `FilePart` with text like:
 
    ```text
-   [vision:dropped-image] {"mime":"image/png","path":"<system-temp>/opencode-vision/vision-...png","originalFilename":"screenshot.png"}
+   [vision:dropped-image] {"mime":"image/png","path":"<system-temp>/kilo-vision-bridge/vision-...png","originalFilename":"screenshot.png"}
    ```
 
 When you see `[vision:dropped-image]`, parse the following JSON object and use `path` in the `Images to Inspect` section.
@@ -153,7 +153,7 @@ Do not embed the raw base64 payload in a shell command; screenshots may contain 
 
 The user's image vision-model choice is persisted so it carries over to future sessions:
 
-- Image choice: `~/.config/opencode/vision-model-image.txt`
+- Image choice: `~/.config/kilo/vision-model-image.txt`
 
 At startup the vision plugin reads this file and, if it holds a known model id, appends `[vision:model-choice] model=<provider/model>` to the system prompt.
 
@@ -162,14 +162,14 @@ Before asking the user, check whether a model choice is already available:
 - If the system prompt contains a `[vision:model-choice]` line, use the matching model id and delegate to the matching `vision-*` subagent.
 - If the system prompt contains a `[vision:model-script]` line, extract the script command from it and run that command without extra flags. It returns a capped `models[]` shortlist, matching `vision-*` subagent names, counts for the full discovered set, and any persisted choice discovered at runtime.
 - If there is no `[vision:model-script]` line but you are working in this repository, run `node scripts/vision-models.mjs` from the package root.
-- If the script returns `models: []`, do not invent or hardcode a fallback model. Report that no configured OpenCode provider currently exposes an image-capable model, include the script warnings, and ask the user to connect a provider in OpenCode, set the provider's API-key environment variable, or configure `enabled_providers` / `provider`.
+- If the script returns `models: []`, do not invent or hardcode a fallback model. Report that no configured Kilo provider currently exposes an image-capable model, include the script warnings, and ask the user to connect a provider in Kilo, set the provider's API-key environment variable, or configure `enabled_providers` / `provider`.
 - If the script returns a persisted choice, use it directly.
 - If no persisted choice exists, ask the user to choose from the capped `models[]` returned by the script. Do not delegate to a `vision-*` subagent until the user has selected a model. Do not treat the first ranked model as an implicit default. Do not ask from a large full model list. Do not use a hardcoded model list.
 
 <MODEL_PICKER_EXAMPLE>
 
 ```sh
-node /path/to/opencode-vision/scripts/vision-models.mjs
+node /path/to/kilo-vision-bridge/scripts/vision-models.mjs
 ```
 
 Use the returned capped `models[]` to build the picker:
@@ -190,7 +190,7 @@ question({
 
 The script builds `models[]` by applying this picker algorithm:
 
-- Keep only active models that support image input and text output.
+- Keep models with any status except `deprecated` that support image input and text output; rank `active` models first.
 - Rank by reasoning support, tool-call support, newer release date, larger context limit, then stable model id.
 - Keep only the latest model in each provider/model series before applying the picker cap. For example, GPT 5.5 supersedes GPT 5.4, and Kimi K2.7 supersedes Kimi K2.5.
 - Keep at most two models per provider and at most six picker entries total.
@@ -227,7 +227,7 @@ After the user answers:
     }
   ],
   "modelCount": 42,
-  "choiceFile": "/Users/me/.config/opencode/vision-model-image.txt",
+  "choiceFile": "/Users/me/.config/kilo/vision-model-image.txt",
   "configuredProviders": ["openai"],
   "providerSelection": {
     "source": "enabled_providers",
