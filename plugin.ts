@@ -18,7 +18,16 @@ const dataDir =
       existsSync(join(d, "scripts", "vision-models.mjs"))
   ) ?? bundleDir
 
-const bodyTpl = readFileSync(join(dataDir, "subagent-body.md"), "utf8")
+// Degraded-mode fallback used when the sibling subagent-body.md is missing
+// (e.g. only dist/index.js was copied into the plugin auto-load dir). Without
+// this, module load throws and Kilo silently skips the whole plugin.
+const bodyTpl: string = (() => {
+  try {
+    return readFileSync(join(dataDir, "subagent-body.md"), "utf8")
+  } catch {
+    return "You are a vision subagent. Read each image file listed in the prompt, analyze only those images against the visual task, and respond with exactly one JSON object matching the response template. Do not emit prose or extra keys. Use null for anything that cannot be determined from the images."
+  }
+})()
 
 type VisionModelEntry = {
   provider: string
