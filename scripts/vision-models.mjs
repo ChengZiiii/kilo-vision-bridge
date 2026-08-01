@@ -25,12 +25,12 @@ Options:
   --model <model>       Image-capable provider/model id to persist.
   --cwd <path>          Directory used for project config discovery.
   --worktree <path>     Stop project config discovery at this directory.
-  --config-dir <path>   OpenCode config directory. Defaults to OPENCODE_CONFIG_DIR or XDG config.
-  --models-file <path>  OpenCode cached models file. Defaults to OPENCODE_MODELS_PATH or XDG cache.
-  --data-dir <path>     OpenCode data directory for auth.json. Defaults to OPENCODE_DATA_DIR or XDG data.
+  --config-dir <path>   Kilo config directory. Defaults to KILO_CONFIG_DIR or XDG config.
+  --models-file <path>  Kilo cached models file. Defaults to KILO_MODELS_PATH or XDG cache.
+  --data-dir <path>     Kilo data directory for auth.json. Defaults to KILO_DATA_DIR or XDG data.
 
-Outputs JSON describing configured models from OpenCode's cached catalog after
-applying OpenCode provider config, saved auth, and matching provider environment
+Outputs JSON describing configured models from Kilo's cached catalog after
+applying Kilo provider config, saved auth, and matching provider environment
 variables. Returned models must support image input.`
 }
 
@@ -109,42 +109,42 @@ function readRequiredValue(argv, index, flag) {
 }
 
 function homeDir() {
-  return env.OPENCODE_TEST_HOME ?? homedir()
+  return env.KILO_TEST_HOME ?? homedir()
 }
 
 function xdgPath(kind, fallback) {
   return env[kind] ?? join(homeDir(), fallback)
 }
 
-function opencodeConfigDir(args) {
+function kiloConfigDir(args) {
   return resolve(
     args.configDir ??
-      env.OPENCODE_CONFIG_DIR ??
-      join(xdgPath("XDG_CONFIG_HOME", ".config"), "opencode"),
+      env.KILO_CONFIG_DIR ??
+      join(xdgPath("XDG_CONFIG_HOME", ".config"), "kilo"),
   )
 }
 
-function opencodeCacheDir() {
-  return resolve(join(xdgPath("XDG_CACHE_HOME", ".cache"), "opencode"))
+function kiloCacheDir() {
+  return resolve(join(xdgPath("XDG_CACHE_HOME", ".cache"), "kilo"))
 }
 
-function opencodeDataDir(args) {
+function kiloDataDir(args) {
   return resolve(
     args.dataDir ??
-      env.OPENCODE_DATA_DIR ??
-      join(xdgPath("XDG_DATA_HOME", ".local/share"), "opencode"),
+      env.KILO_DATA_DIR ??
+      join(xdgPath("XDG_DATA_HOME", ".local/share"), "kilo"),
   )
 }
 
-function opencodeModelsFile(args) {
+function kiloModelsFile(args) {
   if (args.modelsFile) return resolve(args.modelsFile)
-  if (env.OPENCODE_MODELS_PATH) return resolve(env.OPENCODE_MODELS_PATH)
-  const source = env.OPENCODE_MODELS_URL ?? "https://models.dev"
+  if (env.KILO_MODELS_PATH) return resolve(env.KILO_MODELS_PATH)
+  const source = env.KILO_MODELS_URL ?? "https://models.dev"
   const file =
     source === "https://models.dev"
       ? "models.json"
       : `models-${createHash("sha1").update(source).digest("hex")}.json`
-  return join(opencodeCacheDir(), file)
+  return join(kiloCacheDir(), file)
 }
 
 function choiceFile(configDir) {
@@ -328,38 +328,38 @@ function unique(items) {
 }
 
 function configFileSources(args, configDir) {
-  const cwd = resolve(args.cwd ?? env.OPENCODE_CWD ?? process.cwd())
+  const cwd = resolve(args.cwd ?? env.KILO_CWD ?? process.cwd())
   const worktree = args.worktree
     ? resolve(args.worktree)
-    : env.OPENCODE_WORKTREE
-      ? resolve(env.OPENCODE_WORKTREE)
+    : env.KILO_WORKTREE
+      ? resolve(env.KILO_WORKTREE)
       : findGitRoot(cwd)
   const files = []
 
-  for (const file of ["config.json", "opencode.json", "opencode.jsonc"]) {
+  for (const file of ["kilo.json", "kilo.jsonc"]) {
     files.push({ path: join(configDir, file), scope: "global" })
   }
 
-  if (env.OPENCODE_CONFIG) {
-    files.push({ path: resolve(env.OPENCODE_CONFIG), scope: "custom" })
+  if (env.KILO_CONFIG) {
+    files.push({ path: resolve(env.KILO_CONFIG), scope: "custom" })
   }
 
-  if (!truthy(env.OPENCODE_DISABLE_PROJECT_CONFIG)) {
-    for (const file of findUpTargets(["opencode.jsonc", "opencode.json"], cwd, worktree).reverse()) {
+  if (!truthy(env.KILO_DISABLE_PROJECT_CONFIG)) {
+    for (const file of findUpTargets(["kilo.jsonc", "kilo.json"], cwd, worktree).reverse()) {
       files.push({ path: file, scope: "project" })
     }
   }
 
   const configDirs = [configDir]
-  if (!truthy(env.OPENCODE_DISABLE_PROJECT_CONFIG)) {
-    configDirs.push(...findUpTargets([".opencode"], cwd, worktree))
+  if (!truthy(env.KILO_DISABLE_PROJECT_CONFIG)) {
+    configDirs.push(...findUpTargets([".kilo"], cwd, worktree))
   }
-  const homeOpencode = join(homeDir(), ".opencode")
-  if (isDirectory(homeOpencode)) configDirs.push(homeOpencode)
-  if (env.OPENCODE_CONFIG_DIR) configDirs.push(resolve(env.OPENCODE_CONFIG_DIR))
+  const homeKilo = join(homeDir(), ".kilo")
+  if (isDirectory(homeKilo)) configDirs.push(homeKilo)
+  if (env.KILO_CONFIG_DIR) configDirs.push(resolve(env.KILO_CONFIG_DIR))
 
   for (const dir of unique(configDirs)) {
-    for (const file of ["opencode.json", "opencode.jsonc"]) {
+    for (const file of ["kilo.jsonc", "kilo.json"]) {
       files.push({ path: join(dir, file), scope: dir === configDir ? "global" : "directory" })
     }
   }
@@ -373,7 +373,7 @@ function truthy(value) {
   return normalized === "1" || normalized === "true"
 }
 
-function loadOpenCodeConfig(args, configDir) {
+function loadKiloConfig(args, configDir) {
   let config = {}
   const { cwd, worktree, files } = configFileSources(args, configDir)
   const loadedFiles = []
@@ -388,12 +388,12 @@ function loadOpenCodeConfig(args, configDir) {
     loadedFiles.push(source)
   }
 
-  if (env.OPENCODE_CONFIG_CONTENT) {
+  if (env.KILO_CONFIG_CONTENT) {
     config = mergeConfig(
       config,
-      parseJsonc(env.OPENCODE_CONFIG_CONTENT, "OPENCODE_CONFIG_CONTENT"),
+      parseJsonc(env.KILO_CONFIG_CONTENT, "KILO_CONFIG_CONTENT"),
     )
-    loadedFiles.push({ path: "OPENCODE_CONFIG_CONTENT", scope: "env" })
+    loadedFiles.push({ path: "KILO_CONFIG_CONTENT", scope: "env" })
   }
 
   return { config, loadedFiles, cwd, worktree }
@@ -401,15 +401,15 @@ function loadOpenCodeConfig(args, configDir) {
 
 function readModelsCatalog(filepath) {
   if (!existsSync(filepath)) {
-    throw new Error(`OpenCode cached model file not found: ${filepath}`)
+    throw new Error(`Kilo cached model file not found: ${filepath}`)
   }
   return JSON.parse(readFileSync(filepath, "utf8"))
 }
 
 function readAuthData(dataDir) {
   try {
-    if (env.OPENCODE_AUTH_CONTENT) {
-      return JSON.parse(env.OPENCODE_AUTH_CONTENT)
+    if (env.KILO_AUTH_CONTENT) {
+      return JSON.parse(env.KILO_AUTH_CONTENT)
     }
     const file = join(dataDir, "auth.json")
     if (!existsSync(file)) return {}
@@ -482,13 +482,29 @@ function mergeModel(existing, override) {
   return mergeConfig(existing, override)
 }
 
+// Case-insensitive id matching (RB-4): the cached catalog and Kilo configs may
+// use different casings for the same provider/model id (e.g. catalog stores
+// `MiniMax-M3` while the config writes `minimax-m3`). All lookups fold ids to
+// lowercase; outputs (model ids, subagent names, persisted choice) keep the
+// catalog's canonical casing.
+
+function foldKey(record, key) {
+  const folded = String(key).toLowerCase()
+  for (const existing of Object.keys(record)) {
+    if (String(existing).toLowerCase() === folded) return existing
+  }
+  return key
+}
+
 function providerModels(providerID, catalog, config) {
   const providerConfig = isRecord(config.provider?.[providerID])
     ? config.provider[providerID]
     : isRecord(config.providers?.[providerID])
       ? config.providers[providerID]
       : {}
-  const catalogProvider = isRecord(catalog[providerID]) ? catalog[providerID] : {}
+  const catalogProvider = isRecord(catalog[String(providerID).toLowerCase()])
+    ? catalog[String(providerID).toLowerCase()]
+    : {}
   const rawModels = {
     ...(isRecord(catalogProvider.models) ? catalogProvider.models : {}),
   }
@@ -496,8 +512,10 @@ function providerModels(providerID, catalog, config) {
   for (const [key, override] of Object.entries(
     isRecord(providerConfig.models) ? providerConfig.models : {},
   )) {
+    if (!isRecord(override)) continue
     const id = typeof override?.id === "string" ? override.id : key
-    rawModels[key] = mergeModel(rawModels[id] ?? rawModels[key], override)
+    const targetKey = foldKey(rawModels, id)
+    rawModels[targetKey] = mergeModel(rawModels[targetKey], override)
   }
 
   return { providerConfig, rawModels }
@@ -529,10 +547,15 @@ function displayModel(providerID, id) {
 }
 
 function applyProviderModelFilters(providerConfig, modelKey) {
-  const blacklist = stringArray(providerConfig.blacklist)
-  const whitelist = stringArray(providerConfig.whitelist)
-  if (blacklist.includes(modelKey)) return false
-  if (whitelist.length > 0 && !whitelist.includes(modelKey)) return false
+  const blacklist = stringArray(providerConfig.blacklist).map((item) =>
+    item.toLowerCase(),
+  )
+  const whitelist = stringArray(providerConfig.whitelist).map((item) =>
+    item.toLowerCase(),
+  )
+  const folded = String(modelKey).toLowerCase()
+  if (blacklist.includes(folded)) return false
+  if (whitelist.length > 0 && !whitelist.includes(folded)) return false
   return true
 }
 
@@ -541,7 +564,9 @@ function discoverVisionModels(catalog, config, providerSelection) {
   const missingProviders = []
 
   for (const providerID of providerSelection.ids) {
-    const hasCatalogProvider = isRecord(catalog[providerID])
+    const hasCatalogProvider = isRecord(
+      catalog[String(providerID).toLowerCase()],
+    )
     const { providerConfig, rawModels } = providerModels(providerID, catalog, config)
     if (!hasCatalogProvider && Object.keys(rawModels).length === 0) {
       missingProviders.push(providerID)
@@ -551,7 +576,7 @@ function discoverVisionModels(catalog, config, providerSelection) {
     for (const [modelKey, rawModel] of Object.entries(rawModels)) {
       if (!isRecord(rawModel)) continue
       if (!applyProviderModelFilters(providerConfig, modelKey)) continue
-      if (rawModel.status && rawModel.status !== "active") continue
+      if (rawModel.status === "deprecated") continue
 
       const capabilities = modelCapabilities(rawModel)
       if (!capabilities.supportsImage) continue
@@ -753,7 +778,8 @@ function readPersistedChoice(file, modelsByID) {
   try {
     if (!existsSync(file)) return undefined
     const raw = readFileSync(file, "utf8").trim()
-    const entry = modelsByID.get(raw)
+    const entry =
+      modelsByID.get(raw) ?? modelsByID.get(String(raw).toLowerCase())
     if (entry?.supportsImage) return entry
   } catch {
     return undefined
@@ -771,7 +797,7 @@ function choicePayload(entry) {
 }
 
 function validateSelectedModel(model, allModelsByID) {
-  const entry = allModelsByID.get(model)
+  const entry = allModelsByID.get(model) ?? allModelsByID.get(String(model).toLowerCase())
   if (!entry) throw new Error(`Unknown image model: ${model}`)
   if (!entry.supportsImage) throw new Error(`Model ${model} does not support image input`)
   return entry
@@ -782,8 +808,17 @@ function persistSelection(file, entry) {
   writeFileSync(file, `${entry.model}\n`)
 }
 
+function modelsByIDMap(entries) {
+  const map = new Map()
+  for (const entry of entries) {
+    map.set(entry.model, entry)
+    map.set(String(entry.model).toLowerCase(), entry)
+  }
+  return map
+}
+
 function payload(input) {
-  const allModelsByID = new Map(input.allModels.map((entry) => [entry.model, entry]))
+  const allModelsByID = modelsByIDMap(input.allModels)
   const persistedChoice = readPersistedChoice(input.choiceFile, allModelsByID)
   const picker = pickerModels(input.models, persistedChoice)
   const result = {
@@ -827,22 +862,22 @@ try {
     process.exit(0)
   }
 
-  const configDir = opencodeConfigDir(args)
-  const dataDir = opencodeDataDir(args)
-  const modelsFile = opencodeModelsFile(args)
+  const configDir = kiloConfigDir(args)
+  const dataDir = kiloDataDir(args)
+  const modelsFile = kiloModelsFile(args)
   const file = choiceFile(configDir)
   const catalog = readModelsCatalog(modelsFile)
   const authData = readAuthData(dataDir)
-  const loaded = loadOpenCodeConfig(args, configDir)
+  const loaded = loadKiloConfig(args, configDir)
   const providerSelection = configuredProviderIDs(loaded.config, catalog, authData)
   const discovered = discoverVisionModels(catalog, loaded.config, providerSelection)
   const allModels = discovered.models
-  const allModelsByID = new Map(allModels.map((entry) => [entry.model, entry]))
+  const allModelsByID = modelsByIDMap(allModels)
   const warnings = []
 
   if (providerSelection.source === "none") {
     warnings.push(
-      "No OpenCode provider configuration, provider credentials, or matching provider environment variables found; no configured providers can be intersected with the cached model catalog.",
+      "No Kilo provider configuration, provider credentials, or matching provider environment variables found; no configured providers can be intersected with the cached model catalog.",
     )
   }
   if (discovered.missingProviders.length > 0) {
