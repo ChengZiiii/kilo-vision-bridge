@@ -145,7 +145,7 @@
 
 ## 8. Commits
 
-- [ ] 8.1 `plugin: register vision_analyze tool with subagent fallback`
-- [ ] 8.2 `skill: route vision delegation tool-first`
-- [ ] 8.3 `tests: cover vision-http core`
-- [ ] 8.4 `docs: describe tool-first architecture`
+- [x] 8.1 `plugin: register vision_analyze tool with subagent fallback`
+- [x] 8.2 `skill: route vision delegation tool-first`
+- [x] 8.3 `tests: cover vision-http core`
+- [x] 8.4 `docs: describe tool-first architecture`
