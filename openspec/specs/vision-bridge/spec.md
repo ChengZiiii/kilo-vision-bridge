@@ -181,7 +181,7 @@ when `kilo agent list` runs,
 then it lists `vision-*` agents such as
 `vision-minimax-cn-coding-plan-MiniMax-M3`.
 
-#### Scenario: Vision-capable main model skips registration
+#### Scenario: Vision-capable main model still registers subagents
 
 Given the top-level config `model` is set to a vision-capable
 `provider/model` (image input modality in the catalog),
