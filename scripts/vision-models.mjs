@@ -502,8 +502,8 @@ function mergeModel(existing, override) {
 // Case-insensitive id matching (RB-4): the cached catalog and Kilo configs may
 // use different casings for the same provider/model id (e.g. catalog stores
 // `MiniMax-M3` while the config writes `minimax-m3`). All lookups fold ids to
-// lowercase; outputs (model ids, subagent names, persisted choice) keep the
-// catalog's canonical casing.
+// lowercase; outputs (model ids, persisted choice) keep the catalog's
+// canonical casing. The subagent type is the fixed constant "vision-agent".
 
 function foldKey(record, key) {
   const folded = String(key).toLowerCase()
@@ -567,10 +567,6 @@ function modelCapabilities(model) {
   return { input, output, supportsImage, supportsTextOutput }
 }
 
-function subagentName(providerID, id) {
-  return `vision-${providerID}-${id.replace(/[/:]/g, "-")}`
-}
-
 function displayModel(providerID, id) {
   return `${providerID}/${id}`
 }
@@ -617,7 +613,7 @@ function discoverVisionModels(catalog, config, providerSelection) {
         provider: providerID,
         modelID: modelKey,
         name: typeof rawModel.name === "string" ? rawModel.name : modelKey,
-        subagentType: subagentName(providerID, modelKey),
+        subagentType: "vision-agent",
         supportsImage: capabilities.supportsImage,
         supportsTextOutput: capabilities.supportsTextOutput,
         inputModalities: capabilities.input,
@@ -797,7 +793,7 @@ function pickerModelPayload(entry, options = {}) {
   const suffix = tags.length > 0 ? ` (${tags.join(", ")})` : ""
   return {
     model: entry.model,
-    subagentType: entry.subagentType,
+    subagentType: "vision-agent",
     pickerLabel: entry.pickerLabel,
     pickerDescription: `${entry.name} - image${status}${suffix}`,
   }
@@ -819,7 +815,7 @@ function choicePayload(entry) {
   if (!entry) return undefined
   return {
     model: entry.model,
-    subagentType: entry.subagentType,
+    subagentType: "vision-agent",
     pickerLabel: entry.pickerLabel,
     pickerDescription: `${entry.name} - image`,
   }
