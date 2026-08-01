@@ -22,9 +22,11 @@ Add the package to the `plugin` array in `~/.config/kilo/kilo.jsonc`, by npm pac
 
 ### Method B — `~/.config/kilo/plugin/` directory
 
-Copy the built `dist/index.js` into Kilo's auto-load plugin directory `~/.config/kilo/plugin/`, together with `subagent-body.md` and the `scripts/` directory so the bundle's data-dir lookup finds them. Do **not** place `SKILL.md` in this directory: Kilo blocks skill files referenced from inside the config directory ("blocked file reference outside project config scope") and logs a load error on every launch. The skill instead lives at `~/.config/kilo/skills/vision/SKILL.md` — copy `SKILL.md` there manually on first install.
+Copy the built `dist/index.js` to `~/.config/kilo/plugin/vision.js`. The plugin is a single self-contained file: the `vision-agent` prompt body is inlined, and the plugin needs no sibling data files (no `subagent-body.md`, no `scripts/`). Do **not** place `SKILL.md` in this directory: Kilo blocks skill files referenced from inside the config directory ("blocked file reference outside project config scope") and logs a load error on every launch. The skill instead lives at `~/.config/kilo/skills/vision/SKILL.md` — copy `SKILL.md` there manually on first install.
 
-**Verification result (Kilo 7.4.17): works.** A lone `dist/index.js` also loads (degraded mode: default subagent body, no skill files) but is not recommended. Prefer Method A unless you specifically need the auto-load directory.
+**Naming convention:** each plugin in the auto-load directory is one file named after the plugin — `vision.js` for this plugin. Other plugins get their own files; the filename identifies the plugin.
+
+**Verification result (Kilo 7.4.17): works.** `kilo agent list` shows the single `vision-agent` subagent and the plugin loads with no errors.
 
 ### Method C — `kilo plugin` command
 
@@ -46,20 +48,6 @@ kilo plugin kilo-vision-bridge
 
 The plugin registers **exactly one** subagent, `vision-agent`, WITHOUT a default model — the plugin never writes `model`. The vision model is set by **you** through the Kilo Code agent model override on `vision-agent` (e.g. `agent["vision-agent"].model = "minimax-cn-coding-plan/MiniMax-M3"`). If no override is set, Kilo falls back to the default model.
 
-To see which image-capable models are available for the override, run the bundled discovery script. It is **read-only**: it lists models and validates ids, and never persists a choice or writes a file:
-
-```bash
-node <package>/scripts/vision-models.mjs
-```
-
-The script prints a capped `models[]` shortlist of image-capable models from your configured providers (`--all` for the full discovered list). To validate a candidate id without changing anything:
-
-```bash
-node <package>/scripts/vision-models.mjs --model <provider/model>
-```
-
-This exits 0 only for a known image-capable model and writes no file.
-
 ### 3. Changing the Vision Model
 
 Change the Kilo Code agent model override on `vision-agent` to another id (e.g. `minimax-cn-coding-plan/MiniMax-M3`). The plugin never reads or writes the field, so your override is always preserved.
@@ -71,7 +59,7 @@ To stop delegation entirely, disable the agent in Kilo Code: set `disable: true`
 The plugin routes images based on the **handling model** of each request, not a single global toggle. The single `vision-agent` subagent is always registered — regardless of the top-level `model` — so a text-only agent in a mixed config can always delegate.
 
 - **Multimodal (vision-capable) model.** Image `FilePart`s pass through untouched in the messages transform — the model sees images natively. The system transform injects a `[vision:native]` instruction telling the model to inspect images directly and NOT use the vision skill or spawn a `vision-agent` subagent. No `[vision:dropped-image]` marker is produced.
-- **Text-only model.** Image `FilePart`s are materialized under the plugin's temp dir and rewritten to `[vision:dropped-image]` markers carrying the resulting path. The system transform injects a read-only `[vision:model-script]` hint with the discovery command so the orchestrator can see which image-capable models are available, then delegates to the `vision-agent` subagent (model from the user's override).
+- **Text-only model.** Image `FilePart`s are materialized under the plugin's temp dir and rewritten to `[vision:dropped-image]` markers carrying the resulting path. The orchestrator then delegates to the `vision-agent` subagent (model from the user's override).
 
 Capability is resolved per request: the messages transform checks the message's `info.model` first, then the agent's configured model, then the top-level config `model` as a final fallback. Provider/model ids match case-insensitively. To bypass the skill per task on a text-only model, prepend this to your prompt:
 
@@ -86,7 +74,7 @@ Kilo disables npm install/postinstall scripts for npm plugins, so a `postinstall
 - **Plugin not loading:** run Kilo with `kilo --print-logs --log-level DEBUG` and check the output for plugin load errors.
 - **Isolating plugin interference:** start Kilo with `KILO_PURE=1` to disable plugins and custom configuration; if the problem disappears, the plugin is the culprit.
 - **Stale plugin cache:** reset the plugin cache under `~/.cache/kilo` (or the legacy `~/.cache/opencode/packages` directory) and restart Kilo.
-- **Missing `vision-agent` subagent:** no model is pre-configured — set one via the Kilo Code agent model override on `vision-agent`. Confirm at least one configured provider exposes an image-capable model and that `~/.cache/kilo/models.json` contains the provider. Run `node <package>/scripts/vision-models.mjs` (read-only) to see which models the plugin discovers.
+- **Missing `vision-agent` subagent:** no model is pre-configured — set one via the Kilo Code agent model override on `vision-agent`. Confirm the override is set and that `~/.cache/kilo/models.json` contains the provider.
 
 ## License
 
