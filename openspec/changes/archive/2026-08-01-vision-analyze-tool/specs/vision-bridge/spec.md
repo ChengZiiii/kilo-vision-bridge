@@ -222,12 +222,35 @@ Given the plugin's config hook runs,
 when `cfg.agent["vision-agent"]` is inspected,
 then it exists with mode `subagent` and NO `model` field set by the plugin.
 
+#### Scenario: User override supplies the model
+
+Given the user overrides `agent["vision-agent"].model` to
+`minimax-cn-coding-plan/MiniMax-M3` in Kilo Code,
+when the config hook runs,
+then the override is preserved (the plugin does not touch the model field)
+and both the `vision_analyze` tool (VT-2) and visual subagent delegations
+use that model.
+
+#### Scenario: Disabled agent stays disabled
+
+Given the user sets `agent["vision-agent"].disable = true` in Kilo Code,
+when the config hook runs and `kilo agent list` executes,
+then `vision-agent` does not appear (Kilo skips disabled agents) and
+delegation to it fails/refuses.
+
 #### Scenario: Disabled agent disables both paths
 
 Given the user sets `agent["vision-agent"].disable = true` in Kilo Code,
 when the config hook runs and the tool registry is inspected,
 then `vision-agent` does not appear in `kilo agent list` and
 `vision_analyze` is not registered.
+
+#### Scenario: No persisted state
+
+Given the plugin is installed,
+when the config hook runs and the system transform executes,
+then no `vision-model-image.txt` file is read or written and no
+`[vision:model-choice]` instruction is injected.
 
 ### Requirement: RB-7: README documents kilo-vision-bridge
 
