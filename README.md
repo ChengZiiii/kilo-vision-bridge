@@ -36,14 +36,11 @@ After install, restart Kilo. The plugin registers the `vision-agent` subagent an
 ### Updating
 
 ```bash
-# update to a specific version — replaces the config entry and re-downloads the package
-kilo plugin kilo-vision-bridge@0.1.2 --global
-
-# or force-reinstall the current spec (replaces an existing entry of the same version)
-kilo plugin kilo-vision-bridge --global --force
+# update to a specific version — MUST combine the pinned version with --force
+kilo plugin kilo-vision-bridge@0.1.2 --global --force
 ```
 
-Restart Kilo afterwards. The update is managed entirely by `kilo plugin` — the config entry and the package store are both handled by the official installer, so there is nothing else to clean up manually.
+**`--force` is required.** Without it, `kilo plugin` detects the existing entry by package name, reports `Already configured`, and leaves the config entry unpinned — the new version lands in the package store but the old one keeps loading. `--force` replaces the config entry with the pinned version (`kilo-vision-bridge@0.1.2`), which is what the loader resolves. Restart Kilo afterwards; the config entry and the package store are both managed by the official installer, so there is nothing else to clean up manually (an orphaned `kilo-vision-bridge@latest/` store dir from the previous install can be deleted safely).
 
 ### Uninstalling
 
