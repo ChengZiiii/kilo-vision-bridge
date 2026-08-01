@@ -26,7 +26,7 @@ Delegates visual tasks to subagents with a vision-capable model.
 
 ## When NOT to invoke this skill
 
-You **MUST NOT** delegate to a vision subagent if the model is vision-capable.
+You **MUST NOT** delegate to a vision subagent if the model is vision-capable. A multimodal (vision-capable) model receives image parts natively in this session: the plugin's messages transform leaves image `FilePart`s untouched on the native path, so you inspect images directly from the message rather than via a path. There is no `[vision:dropped-image]` marker for a multimodal model, and you **MUST NOT** spawn a `vision-*` subagent for it. The system prompt makes this explicit with a `[vision:native]` line; follow it and ignore any `[vision:model-script]` / `[vision:model-choice]` instructions.
 
 ## Step 1. Detect
 
@@ -76,7 +76,7 @@ When a tool result contains an `attachments[]` entry with `mime` starting `image
 
 **Source D - image attached to a user message:**
 
-When the user drops an image into the chat, the vision plugin's `experimental.chat.messages.transform` hook materializes it as a file in the operating system's temporary directory and surfaces the path to the orchestrator. For every user-message `FilePart` with `type: "file"` and `mime: "image/*"`, the hook:
+When the user drops an image into the chat, the vision plugin's `experimental.chat.messages.transform` hook routes per handling model. If the message's model is vision-capable (multimodal), the image `FilePart` passes through untouched — the model sees the image natively and no marker is produced, so the rest of this source does not apply. If the message's model is text-only, the hook materializes the image as a file in the operating system's temporary directory and surfaces the path to the orchestrator. The `[vision:dropped-image]` marker below therefore only appears for text-only models. For every user-message `FilePart` with `type: "file"` and `mime: "image/*"` on the text-only path, the hook:
 
 1. Saves the bytes under the plugin's `kilo-vision-bridge` temporary subdirectory via `writeFileSync` (data URLs) or `copyFileSync` (file paths). Image bytes never touch the shell.
 2. Replaces the `FilePart` with text like:
