@@ -24,40 +24,6 @@ Given `package.json` declares `"engines": { "opencode": "^7.0.0" }`,
 when a Kilo CLI older than 7.0.0 loads the plugin,
 then the plugin is skipped with a warning instead of failing the load.
 
-### Requirement: RB-2: Model discovery script is kilo-ized
-
-**Requirement:** `scripts/vision-models.mjs` `SHALL` use Kilo paths and
-environment variables: `KILO_TEST_HOME`, `KILO_CONFIG_DIR`, `KILO_DATA_DIR`,
-`KILO_MODELS_PATH`, `KILO_MODELS_URL`, `KILO_AUTH_CONTENT`, `KILO_CWD`,
-`KILO_WORKTREE`, `KILO_CONFIG`, `KILO_DISABLE_PROJECT_CONFIG`,
-`KILO_CONFIG_CONTENT`. It `SHALL` discover config files named
-`kilo.json`/`kilo.jsonc` (global dir, project dirs, and `~/.kilo`), scanning
-`kilo.jsonc` with JSONC comment/trailing-comma stripping. The script `SHALL`
-be read-only: it lists image-capable models and `SHALL NOT` persist any
-choice (no `--model` write, no choice file). Help text and warning messages
-`SHALL` say "Kilo" and reference `~/.config/kilo` paths.
-
-#### Scenario: Global config discovery on the reference machine
-
-Given a `kilo.jsonc` at `~/.config/kilo` with comments and provider entries,
-when `node scripts/vision-models.mjs` runs with no flags,
-then it parses `kilo.jsonc`, intersects configured providers with
-`~/.cache/kilo/models.json`, and outputs `ok: true` with a `models[]` list of
-image-capable models (including `minimax-cn-coding-plan/MiniMax-M3`).
-
-#### Scenario: Persisted selection
-
-Given the script lists an image-capable model,
-when run with `--model <provider/model>` or any flag,
-then it validates the id, does NOT write any file, and the output contains no
-`persistedChoice` state — the script is read-only.
-
-#### Scenario: Unknown model rejected
-
-Given `--model <provider/model>` does not match any discovered image-capable
-model,
-then the script exits non-zero with `ok: false` and writes nothing.
-
 ### Requirement: RB-3: Skill installer targets the kilo config dir
 
 **Requirement:** `scripts/install-skill.mjs` `SHALL` install the skill to
@@ -73,15 +39,15 @@ then `SKILL.md` is copied to
 
 ### Requirement: RB-4: Provider/model id matching is case-insensitive
 
-**Requirement:** `plugin.ts` and `scripts/vision-models.mjs` `SHALL` match
-provider ids and model ids case-insensitively when intersecting configured
-providers with the cached catalog, when applying provider
-`whitelist`/`blacklist` filters, when evaluating the
-`configuredModelVisionCapable` predicate, and when resolving a user-provided
-model id (the Kilo Code override value). The case-insensitive matching
-machinery (`foldKey` / lowercase key sets) `SHALL` remain intact, and
-RV-1/RV-2 routing `SHALL` reuse the same folded lookup for per-message and
-per-request capability checks so mixed-case ids keep working.
+**Requirement:** `plugin.ts` `SHALL` match provider ids and model ids
+case-insensitively when intersecting configured providers with the cached
+catalog, when applying provider `whitelist`/`blacklist` filters, when
+evaluating the `configuredModelVisionCapable` predicate, and when resolving
+a user-provided model id (the Kilo Code override value). The
+case-insensitive matching machinery (`foldKey` / lowercase key sets) `SHALL`
+remain intact, and RV-1/RV-2 routing `SHALL` reuse the same folded lookup
+for per-message and per-request capability checks so mixed-case ids keep
+working.
 
 #### Scenario: Config id casing differs from catalog id
 
@@ -132,10 +98,10 @@ then the model is registered as a subagent and listed by the script, and
 
 ### Requirement: RB-6: SKILL.md is kilo-ized
 
-**Requirement:** `SKILL.md` `SHALL` reference `~/.config/kilo/vision-model-image.txt`
-as the persisted choice file, `kilo-vision-bridge` as the temporary image
-subdirectory, and Kilo terminology throughout. It `SHALL` instruct the
-orchestrator to run `node <package>/scripts/vision-models.mjs`.
+**Requirement:** `SKILL.md` `SHALL` use Kilo terminology throughout, name
+`kilo-vision-bridge` as the temporary image subdirectory, and `SHALL NOT`
+reference any model discovery script or picker flow — the `vision-agent`
+model is configured by the user through the Kilo Code agent model override.
 
 #### Scenario: Skill docs match plugin behavior
 
@@ -149,16 +115,17 @@ then it documents `[vision:dropped-image]` with `path` under
 
 **Requirement:** `README.md` `SHALL` describe the plugin's purpose, the
 empirically verified installation methods for Kilo 7.4.17 (config `plugin`
-array, `~/.config/kilo/plugin/` directory, `kilo plugin <pkg>` command), the
-single `vision-agent` subagent registered WITHOUT a default model, the
-Kilo Code agent-model override as the way to set its vision model, the
-disable option (`disable: true` / Kilo Code agent disable), the read-only
-`vision-models.mjs` listing script, per-model vision routing (multimodal
-models receive image parts natively and do not delegate; text-only models
-receive `[vision:dropped-image]` markers and delegate to `vision-agent`),
-the note that Kilo disables npm install/postinstall scripts (skill sync
-happens at module load), troubleshooting (`KILO_PURE`, `--log-level DEBUG`,
-plugin cache reset), and attribution to the upstream MIT project.
+array, the single-file `~/.config/kilo/plugin/vision.js` directory layout
+with a per-plugin-file naming convention, `kilo plugin <pkg>` command), the
+single `vision-agent` subagent registered WITHOUT a default model, the Kilo
+Code agent-model override as the way to set its vision model, the disable
+option (`disable: true` / Kilo Code agent disable), per-model vision routing
+(multimodal models receive image parts natively and do not delegate;
+text-only models receive `[vision:dropped-image]` markers and delegate to
+`vision-agent`), the note that Kilo disables npm install/postinstall scripts
+(skill sync happens at module load), troubleshooting (`KILO_PURE`,
+`--log-level DEBUG`, plugin cache reset), and attribution to the upstream
+MIT project. The README `SHALL NOT` reference a model listing script.
 
 #### Scenario: Installation method verified
 
@@ -258,10 +225,9 @@ image parts natively and MUST NOT delegate (in addition to the existing
 self-gate), that text-only models receive `[vision:dropped-image]` markers
 and delegate, and that delegation `SHALL` target the single `vision-agent`
 subagent whose model is configured by the user through the Kilo Code agent
-model override (not by the plugin). It `SHALL` mention the read-only
-`vision-models.mjs` listing script and that disabling `vision-agent` in Kilo
-Code disables delegation. The README `SHALL` describe the per-model routing
-behavior.
+model override (not by the plugin, and with no model discovery script).
+It `SHALL` state that disabling `vision-agent` in Kilo Code disables
+delegation. The README `SHALL` describe the per-model routing behavior.
 
 #### Scenario: Skill guidance matches routing behavior
 
