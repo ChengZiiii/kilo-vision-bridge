@@ -155,16 +155,16 @@ The user's image vision-model choice is persisted so it carries over to future s
 
 - Image choice: `~/.config/kilo/vision-model-image.txt`
 
-At startup the vision plugin reads this file and, if it holds a known model id, appends `[vision:model-choice] model=<provider/model>` to the system prompt.
+At startup the vision plugin reads this file and, if it holds a known model id, appends `[vision:model-choice] model=<provider/model>` to the system prompt and registers the single `vision-agent` subagent with that model.
 
 Before asking the user, check whether a model choice is already available:
 
-- If the system prompt contains a `[vision:model-choice]` line, use the matching model id and delegate to the matching `vision-*` subagent.
-- If the system prompt contains a `[vision:model-script]` line, extract the script command from it and run that command without extra flags. It returns a capped `models[]` shortlist, matching `vision-*` subagent names, counts for the full discovered set, and any persisted choice discovered at runtime.
+- If the system prompt contains a `[vision:model-choice]` line, use the matching model id and delegate to the `vision-agent` subagent.
+- If the system prompt contains a `[vision:model-script]` line, extract the script command from it and run that command without extra flags. It returns a capped `models[]` shortlist, counts for the full discovered set, and any persisted choice discovered at runtime.
 - If there is no `[vision:model-script]` line but you are working in this repository, run `node scripts/vision-models.mjs` from the package root.
 - If the script returns `models: []`, do not invent or hardcode a fallback model. Report that no configured Kilo provider currently exposes an image-capable model, include the script warnings, and ask the user to connect a provider in Kilo, set the provider's API-key environment variable, or configure `enabled_providers` / `provider`.
 - If the script returns a persisted choice, use it directly.
-- If no persisted choice exists, ask the user to choose from the capped `models[]` returned by the script. Do not delegate to a `vision-*` subagent until the user has selected a model. Do not treat the first ranked model as an implicit default. Do not ask from a large full model list. Do not use a hardcoded model list.
+- If no persisted choice exists, ask the user to choose from the capped `models[]` returned by the script. Do not delegate to the `vision-agent` subagent until the user has selected a model. Do not treat the first ranked model as an implicit default. Do not ask from a large full model list. Do not use a hardcoded model list.
 
 <MODEL_PICKER_EXAMPLE>
 
@@ -202,9 +202,10 @@ The full discovered list is not included in default output. For diagnostics or f
 
 After the user answers:
 
-- Find the matching entry in the capped `models[]` script result and use its `subagentType`.
+- The delegate is always the single `vision-agent` subagent — the script's `subagentType` is the constant `"vision-agent"`; the persisted choice drives its model.
 - Remember the choice for the rest of the session.
 - Persist the mapped model id by running the script with `--model "<provider/model>"`.
+- The change takes effect on the next launch: the plugin re-reads `vision-model-image.txt` at startup and registers `vision-agent` with the new model. The VS Code extension auto-refreshes on save, so no editor restart is needed.
 - If the user picks "Other", first validate exact `provider/model` answers by running the script with `--model "<provider/model>"`. For fuzzy matching, run the script with `--all`, map the answer to the closest `allModels[]` entry, or ask the user to clarify. Do not choose the first ranked model as a fallback; only persist a model id returned by the script.
 
 **Model Script Response Shape:**
@@ -221,7 +222,7 @@ After the user answers:
   "models": [
     {
       "model": "openai/gpt-5.5",
-      "subagentType": "vision-openai-gpt-5.5",
+      "subagentType": "vision-agent",
       "pickerLabel": "openai/gpt-5.5",
       "pickerDescription": "GPT-5.5 - image"
     }
@@ -245,11 +246,11 @@ After the user answers:
 
 ## Step 5. Delegate
 
-Spawn the chosen subagent with the full visual task prompt:
+Spawn the single `vision-agent` subagent with the full visual task prompt. The subagent type is always `"vision-agent"` — it is a constant, not a per-model name — and the plugin configures it with the persisted vision model choice:
 
 ```js
 task({
-  subagent_type: "<mapped subagent_type>",
+  subagent_type: "vision-agent",
   description: "<short visual task description>",
   prompt: `<the spawning prompt>`
 })
