@@ -131,29 +131,6 @@ function kiloModelsFile(): string {
   return join(kiloCacheDir(), file)
 }
 
-function visionChoiceFile(): string {
-  return join(kiloConfigDir(), "vision-model-image.txt")
-}
-
-function readPersistedChoice(): string | undefined {
-  try {
-    const file = visionChoiceFile()
-    if (!existsSync(file)) return
-    const raw = readFileSync(file, "utf8").trim()
-    const folded = raw.toLowerCase()
-    // Fold the persisted line against registeredModels keys so mixed-case
-    // ids still resolve; return the canonical registered key.
-    for (const key of registeredModels.keys()) {
-      if (key.toLowerCase() === folded) {
-        const model = registeredModels.get(key)
-        if (model?.supportsImage) return key
-      }
-    }
-  } catch {
-    return
-  }
-}
-
 function readModelsCatalog(): ModelsCatalog {
   try {
     const file = kiloModelsFile()
@@ -488,30 +465,20 @@ const plugin: Plugin = async () => ({
     cfgAny.skills.paths.push(dataDir)
   }
 
-  // RV-5: register a SINGLE configurable vision-agent subagent whose model is
-  // the persisted choice (canonical, folded match). No choice -> no
-  // registration. The previous always-register loop (one vision-* subagent per
-  // discovered model) is gone; the skill instructs the orchestrator to pick a
-  // model first when none is persisted.
+  // RV-6: register the single vision-agent subagent WITHOUT a default model.
+  // The user supplies the model via the Kilo Code agent model override
+  // (`agent["vision-agent"].model`); the plugin never writes `model` or
+  // `disable`, so user overrides and disable stay effective. Kilo falls back
+  // to the default model when none is set.
   cfg.agent ??= {}
-  const chosen = readPersistedChoice()
-  if (chosen) {
-    const entry = registeredModels.get(chosen)
-    if (entry) {
-      cfg.agent["vision-agent"] ??= {}
-      Object.assign(cfg.agent["vision-agent"], {
-        description: `Visual judgment subagent (${entry.name}). Consumes a prompt-authored visual task with image paths and a task-specific JSON response template. Not coupled to any screenshot tool or UI framework - works with locally stored images supported by the model.`,
-        mode: "subagent",
-        model: chosen,
-        temperature: 0.1,
-        prompt: bodyTpl
-          .replaceAll("{{model_name}}", entry.name)
-          .replaceAll("{{provider}}", entry.provider)
-          .replaceAll("{{model_id}}", entry.model_id),
-        permission: PERMISSION,
-      })
-    }
-  }
+  cfg.agent["vision-agent"] ??= {}
+  Object.assign(cfg.agent["vision-agent"], {
+    description: "Visual judgment subagent. Consumes a prompt-authored visual task with image paths and a task-specific JSON response template. Not coupled to any screenshot tool or UI framework - works with locally stored images supported by the model. Configure its model via the Kilo Code agent model override.",
+    mode: "subagent",
+    temperature: 0.1,
+    prompt: bodyTpl,
+    permission: PERMISSION,
+  })
   },
 
   // Source D: materialize user-dropped images as stable paths that the
@@ -555,9 +522,10 @@ const plugin: Plugin = async () => ({
     }
   },
 
-  // Persisted model choice is still read by the plugin so the orchestrator
-  // can avoid re-asking. Model listing and persistence changes are handled
-  // by scripts/vision-models.mjs, not a plugin-injected tool.
+  // The system transform tells a text-only orchestrator how to discover
+  // image-capable models. The script is read-only (listing only): no choice
+  // is persisted, and the vision-agent model is configured by the user via
+  // the Kilo Code agent model override.
   "experimental.chat.system.transform": async (input, output) => {
     // RV-2: input.model is Model (has providerID + id, NOT modelID).
     // Reuse the folded visionModelKeys lookup (RB-4 MODIFIED).
@@ -573,23 +541,15 @@ const plugin: Plugin = async () => ({
         "[vision:native] You receive image parts natively in this session. " +
           "Inspect images directly from the message. Do NOT use the vision skill, " +
           "do NOT delegate visual tasks to a vision-* subagent, and ignore any " +
-          "[vision:model-script] / [vision:model-choice] instructions.",
+          "[vision:model-script] instructions.",
       )
       return
     }
     output.system.push(
       `[vision:model-script] Query available image-capable vision models with: node ${VISION_MODELS_SCRIPT}. ` +
-        `Persist a choice with: node ${VISION_MODELS_SCRIPT} --model <provider/model>. ` +
+        `This script lists available image-capable models read-only; configure the vision-agent model via the Kilo Code agent model override instead. ` +
         `Do not use a hardcoded model picker list.`,
     )
-    const choice = readPersistedChoice()
-    if (choice) {
-      output.system.push(
-        `[vision:model-choice] model=${choice}. ` +
-          `Reuse this model for image visual delegations without asking. ` +
-          `To use a different model, run the vision model script with --model <provider/model>.`,
-      )
-    }
   },
 })
 
