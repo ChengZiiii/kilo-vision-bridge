@@ -10,7 +10,7 @@ When the orchestrator model is text-only and a task needs pixels — not just ac
 
 ## Installation
 
-> **Status note:** the three loading methods below are documented pending on-machine verification on Kilo 7.4.17. Each method will be updated with its verified result once the verification pass completes.
+> **Verification:** all three loading methods below were tested on-machine on Kilo 7.4.17; each section records its verified result.
 
 Configure at least one provider with an image-capable model (`enabled_providers` and/or `provider` entries in Kilo config). The plugin discovers models from your configured providers and Kilo's cached model catalog (`~/.cache/kilo/models.json`) — it does not ship a fixed model list.
 
@@ -18,13 +18,13 @@ Configure at least one provider with an image-capable model (`enabled_providers`
 
 Add the package to the `plugin` array in `~/.config/kilo/kilo.jsonc`, by npm package name or by a `file://` path to the package directory.
 
-**Verification result (Kilo 7.4.17): pending verification**
+**Verification result (Kilo 7.4.17): works — recommended.** `kilo agent list` shows all `vision-*` subagents (including `vision-minimax-cn-coding-plan-MiniMax-M3`) and the plugin loads with no errors.
 
 ### Method B — `~/.config/kilo/plugin/` directory
 
-Copy the built `dist/index.js` into Kilo's auto-load plugin directory `~/.config/kilo/plugin/`.
+Copy the built package layout into Kilo's auto-load plugin directory `~/.config/kilo/plugin/`: `dist/index.js` plus the sibling data files the bundle reads at module load (`SKILL.md`, `subagent-body.md`, and the `scripts/` directory).
 
-**Verification result (Kilo 7.4.17): pending verification**
+**Verification result (Kilo 7.4.17): works only with the full package layout.** Copying a lone `dist/index.js` is silently skipped by Kilo — the module-load read of `subagent-body.md` throws when the sibling files are absent, so the plugin never loads and no error is surfaced. With the full layout copied, `kilo agent list` shows the `vision-*` subagents. Prefer Method A unless you specifically need the auto-load directory.
 
 ### Method C — `kilo plugin` command
 
@@ -32,7 +32,7 @@ Copy the built `dist/index.js` into Kilo's auto-load plugin directory `~/.config
 kilo plugin kilo-vision-bridge
 ```
 
-**Verification result (Kilo 7.4.17): pending verification**
+**Verification result (Kilo 7.4.17): requires `npm publish` first.** Before the package is published, the command fails cleanly (404 from `registry.npmjs.org`, exit 1, config untouched). After `npm publish`, `kilo plugin kilo-vision-bridge --global` installs the package and patches the config.
 
 ## Usage
 
