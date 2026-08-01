@@ -1,9 +1,17 @@
 import type { Plugin } from "@kilocode/plugin"
+import { tool } from "@kilocode/plugin"
 import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, cpSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, resolve, isAbsolute } from "node:path"
 import { homedir, tmpdir } from "node:os"
 import { createHash } from "node:crypto"
+import {
+  buildVisionRequest,
+  parseVisionResponse,
+  resolveVisionEndpoint,
+  resolveVisionApiKey,
+  postVisionRequest,
+} from "./src/vision-http.ts"
 
 // Resolve the data dir (skill source + skills.paths entry) relative to the
 // bundle. When run from source, `import.meta.url` is plugin.ts and SKILL.md
@@ -66,6 +74,7 @@ type ProviderConfig = {
   whitelist?: string[]
   blacklist?: string[]
   models?: Record<string, RawModel>
+  options?: { baseURL?: string }
 }
 
 type ConfigLike = {
@@ -97,6 +106,17 @@ const PERMISSION = {
     [join(IMAGE_TMP_DIR, "*")]: "allow",
   },
 }
+
+// vision_analyze tool state (VT-2 / RV-6): the tool's model source is the
+// user's agent["vision-agent"].model override captured at config time. The
+// plugin never writes `model` or `disable`; `disable: true` on vision-agent
+// removes the tool from the registry.
+const VISION_TOOL_NAME = "vision_analyze"
+const VISION_TOOL_TIMEOUT_MS = 60_000
+let visionToolModel: string | undefined
+let visionToolDisabled = false
+let visionToolConfig: ConfigLike = {}
+let visionToolCatalog: ModelsCatalog = {}
 
 function homeDir(): string {
   return process.env.KILO_TEST_HOME ?? homedir()
@@ -423,6 +443,95 @@ function ensureSkillInstalled() {
 }
 ensureSkillInstalled()
 
+// VT-1/VT-2/VT-5: the native vision_analyze tool. execute runs in-process:
+// model configured (from agent["vision-agent"].model) -> endpoint + key
+// resolution -> read images -> OpenAI-compatible or Anthropic-shaped chat
+// completion (shape resolved from the endpoint URL, see src/vision-http.ts)
+// -> return the model's raw JSON text. Error categories are encoded in the
+// message prefix so the skill can branch: "model not configured" (never
+// falls back), "provider error" (falls back to the vision-agent subagent),
+// "invalid response" (skill Step 6 retry).
+function visionAnalyzeTool() {
+  return tool({
+    description:
+      "Performs a visual judgment on local image files with the configured vision model. " +
+      "Pass `images` as [{id, path}] (short contract ids plus local image paths), the exact visual " +
+      "`question`, a `response_template` (JSON string defining the required response shape), and " +
+      "optional `response_rules` for task-specific constraints. Returns exactly one JSON object " +
+      "matching the response template.",
+    args: {
+      images: tool.schema.array(
+        tool.schema.object({
+          id: tool.schema.string(),
+          path: tool.schema.string(),
+        }),
+      ),
+      question: tool.schema.string(),
+      response_template: tool.schema.string(),
+      response_rules: tool.schema.optional(tool.schema.string()),
+    },
+    async execute(args, ctx) {
+      if (visionToolDisabled) {
+        throw new Error(
+          'vision_analyze: vision-agent is disabled: set disable: false on agent["vision-agent"] to use this tool',
+        )
+      }
+      if (!visionToolModel) {
+        throw new Error(
+          'vision_analyze: model not configured: set agent["vision-agent"].model to a vision-capable ' +
+            'provider/model (e.g. "minimax-cn-coding-plan/MiniMax-M3")',
+        )
+      }
+      const parts = splitModel(visionToolModel)
+      if (!parts) {
+        throw new Error(
+          `vision_analyze: model not configured: invalid model id "${visionToolModel}" (expected "provider/model")`,
+        )
+      }
+      const models = providerModels(parts.provider, visionToolCatalog, visionToolConfig)
+      const match = models[foldKey(models, parts.modelID)]
+      if (!match || !isVisionModel(match)) {
+        throw new Error(
+          `vision_analyze: model not configured: ${visionToolModel} is not image-capable; set ` +
+            'agent["vision-agent"].model to a vision-capable model',
+        )
+      }
+      const endpoint = resolveVisionEndpoint(parts.provider, visionToolCatalog, visionToolConfig, process.env)
+      if (!endpoint.ok) throw new Error(`vision_analyze: provider error: ${endpoint.error}`)
+      const apiKey = resolveVisionApiKey(
+        parts.provider,
+        visionToolCatalog,
+        visionToolConfig,
+        readAuthData(),
+        process.env,
+      )
+      if (!apiKey.ok) throw new Error(`vision_analyze: provider error: ${apiKey.error}`)
+      const images: { id: string; path: string; base64: string }[] = []
+      for (const image of args.images) {
+        const path = isAbsolute(image.path) ? image.path : join(ctx.directory, image.path)
+        if (!existsSync(path)) {
+          throw new Error(`vision_analyze: missing image: ${path}`)
+        }
+        images.push({ id: image.id, path, base64: readFileSync(path).toString("base64") })
+      }
+      const request = buildVisionRequest(
+        parts.modelID,
+        endpoint.value,
+        images,
+        args.question,
+        args.response_template,
+        args.response_rules,
+        apiKey.value,
+      )
+      const result = await postVisionRequest(request, { signal: ctx.abort, timeoutMs: VISION_TOOL_TIMEOUT_MS })
+      if (!result.ok) throw new Error(`vision_analyze: provider error: ${result.error}`)
+      const parsed = parseVisionResponse(result.text)
+      if (!parsed.ok) throw new Error(`vision_analyze: invalid response: ${parsed.error}`)
+      return parsed.text
+    },
+  })
+}
+
 const plugin: Plugin = async () => ({
   config: async (cfg) => {
   const catalog = readModelsCatalog()
@@ -482,6 +591,38 @@ const plugin: Plugin = async () => ({
     prompt: bodyTpl,
     permission: PERMISSION,
   })
+
+  // VT-2: capture the tool's model source (and the disable flag) from the
+  // user's vision-agent override. Read-only: the plugin never writes these.
+  const visionAgent = cfg.agent["vision-agent"] as
+    | { model?: string; disable?: boolean }
+    | undefined
+  visionToolModel =
+    typeof visionAgent?.model === "string" && visionAgent.model ? visionAgent.model : undefined
+  visionToolDisabled = visionAgent?.disable === true
+  visionToolConfig = cfg as ConfigLike
+  visionToolCatalog = catalog
+  },
+
+  // VT-1/VT-2: register vision_analyze natively. A getter keeps the registry
+  // view honest when the user disables vision-agent (disable: true -> the
+  // tool is absent from the registry, matching the subagent being hidden).
+  // execute() additionally guards against a disabled/absent state.
+  get tool(): Record<string, import("@kilocode/plugin").ToolDefinition> {
+    return visionToolDisabled ? {} : { [VISION_TOOL_NAME]: visionAnalyzeTool() }
+  },
+
+  // VT-3: upgrade ask -> allow for vision_analyze permission requests only.
+  // An explicit user deny resolves before this hook and is never overwritten.
+  // (Spike 1.2: Kilo 7.4.17 never dispatches this hook — custom tools run
+  // without prompts and a deny removes the tool from the toolset — but
+  // registering it preserves the auto-allow contract on runtimes that do.)
+  "permission.ask": async (input, output) => {
+    const key =
+      (input as unknown as { permission?: string }).permission ?? input.id ?? input.type
+    if (key === VISION_TOOL_NAME && output.status === "ask") {
+      output.status = "allow"
+    }
   },
 
   // Source D: materialize user-dropped images as stable paths that the

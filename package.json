@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "prebuild": "rm -rf dist",
-    "build": "bun build ./plugin.ts --outfile ./dist/index.js --target node --format esm --packages external",
+    "build": "bun build ./plugin.ts --outfile ./dist/index.js --target node --format esm",
     "prepublishOnly": "bun run build",
     "postinstall": "node ./scripts/install-skill.mjs",
     "test": "node --test tests/*.test.mjs",
