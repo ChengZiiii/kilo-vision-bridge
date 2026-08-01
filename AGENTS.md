@@ -14,7 +14,7 @@
 
 | 文件 | 职责 |
 | ---- | ---- |
-| `plugin.ts` | 插件入口：config hook（注册 agent/skill、捕获模型旋钮）、`tool` hook（注册 `vision_analyze`）、`permission.ask`、messages/system transform、skill 自动同步 |
+| `plugin.ts` | 插件入口：config hook（注册 agent/skill、捕获模型旋钮）、`tool` hook（注册 `vision_analyze`）、`permission.ask`、messages/system transform、skills.paths 注册（包内直扫） |
 | `src/vision-http.ts` | 纯函数核心：请求构建、响应解析、endpoint/API key 解析、HTTP 调用。**无 @kilocode 依赖、无副作用**——plugin.ts 打包它，tests 直接 import 它 |
 | `SKILL.md` | 视觉意图检测与委托路由（工具优先 → 子代理回退） |
 | `tests/vision-http.test.mjs` | node:test 单测（stub `globalThis.fetch`） |
@@ -43,8 +43,8 @@
    bun build ./plugin.ts --outfile ./dist/index.js --target node --format esm --watch
    # 或一次性：bun run build
    ```
-2. **SKILL.md 改动零手动**：启动时自动同步到
-   `~/.config/kilo/skills/vision/SKILL.md`（字节一致跳过写入）。
+2. **SKILL.md 改动零手动**：改完重启即生效（skill 从包目录经
+   `skills.paths` 直扫，无同步/复制步骤）。
 3. **沙盒隔离测试**（不污染真实配置）：
    ```powershell
    $env:KILO_CONFIG_DIR = "<临时>/config"
@@ -90,12 +90,14 @@ bun run build
 三种方式任选其一（插件 id 均为 `"vision"`，**并存会重复注册冲突**）：
 
 - **A（推荐）**：`kilo.jsonc` 的 `plugin` 数组写本地包路径
-  `"file:///<仓库绝对路径>"`（本地仓库即包，本地开发最方便）。skill 自动同步。
+  `"file:///<仓库绝对路径>"`（本地仓库即包，本地开发最方便）。skill 经
+  `skills.paths` 从包内直扫，无自动同步。
 - **B（单文件）**：复制 `dist/index.js` 到 `~/.config/kilo/plugin/vision.js`；
   **skill 需手动复制**到 `~/.config/kilo/skills/vision/SKILL.md`。
 - **npm**：发布后 `kilo plugin kilo-vision-bridge --global` 安装并自动 patch
   配置。切换时先删掉旧安装（`kilo.jsonc` 里的 `file://` 条目或旧单文件）。
-- `~/.config/kilo/skills/vision/` 是插件自动维护的镜像缓存，可删可留（启动自愈）。
+- 插件**不写** `~/.config/kilo/skills/`；Method B 需手动复制 SKILL.md
+  （其余安装方式从包内经 `skills.paths` 直扫发现）。
 
 ## OpenSpec 规格工作流（libretto）
 

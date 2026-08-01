@@ -77,9 +77,11 @@ Capability is resolved per request: the messages transform checks the message's 
 
 To stop delegation entirely, disable `vision-agent` in Kilo Code: set `disable: true` on `agent["vision-agent"]`. This disables **both** paths: the agent does not appear in `kilo agent list` and cannot be delegated to, and the `vision_analyze` tool is not registered in any session. The plugin never writes `disable`, so your setting stays effective.
 
-### 7. Skill Sync and npm Install Scripts
+### 7. Skill Discovery and npm Install Scripts
 
-Kilo disables npm install/postinstall scripts for npm plugins, so a `postinstall` hook cannot be relied on to install the skill. The plugin therefore syncs `SKILL.md` to `~/.config/kilo/skills/vision/SKILL.md` at **module load** — which runs before skill discovery on the same launch, so the skill is usable on the first launch after install — and additionally pushes the package data dir onto `config.skills.paths` as a fallback. The `postinstall` script in `package.json` remains as belt-and-suspenders for manual installs.
+The skill is discovered from the **installed package directory**: the plugin pushes its package data dir (the directory containing `SKILL.md`) onto `config.skills.paths` in the config hook, and Kilo scans `**/SKILL.md` under each configured path. The skill therefore resolves straight out of the installed package — no postinstall copy, no symlink, no module-load sync — and is usable on the first launch after install.
+
+`scripts/install-skill.mjs` (the `postinstall` script in `package.json`) remains as a manual-install aid for setups where postinstall scripts do run (Kilo's npm plugin installer suppresses them, so it is not relied on for package installs). Method B (single-file `~/.config/kilo/plugin/vision.js` install) requires a manual copy: copy `SKILL.md` to `~/.config/kilo/skills/vision/SKILL.md` on first install.
 
 ## Troubleshooting
 
