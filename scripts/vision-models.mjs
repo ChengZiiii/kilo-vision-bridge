@@ -432,6 +432,18 @@ function providerConfigEntries(config) {
   }).filter(([, value]) => isRecord(value))
 }
 
+// Canonicalize a provider id against the catalog: return the first catalog
+// provider key whose lowercase form matches (catalog casing wins), falling
+// back to the input id when the provider is absent from the catalog (e.g.
+// config-only providers like `78code-codex`).
+function canonicalProviderID(catalog, id) {
+  const folded = String(id).toLowerCase()
+  for (const key of Object.keys(catalog)) {
+    if (String(key).toLowerCase() === folded) return key
+  }
+  return id
+}
+
 function configuredProviderIDs(config, catalog, authData) {
   const disabled = new Set(stringArray(config.disabled_providers))
   const enabled = stringArray(config.enabled_providers)
@@ -464,7 +476,12 @@ function configuredProviderIDs(config, catalog, authData) {
     ids = []
   }
 
-  ids = unique(ids).filter((id) => !disabled.has(id))
+  const disabledFolded = new Set(
+    Array.from(disabled).map((id) => String(id).toLowerCase()),
+  )
+  ids = unique(ids.map((id) => canonicalProviderID(catalog, id))).filter(
+    (id) => !disabledFolded.has(String(id).toLowerCase()),
+  )
   return {
     ids,
     source,
@@ -496,12 +513,24 @@ function foldKey(record, key) {
   return key
 }
 
+// Case-insensitive provider config lookup: scan `config.provider` then
+// `config.providers` keys folded against the provider id (first match wins).
+// Config keys may differ in casing from the catalog-derived id, so an exact
+// lookup would miss entries like `Minimax-Cn-Coding-Plan`.
+function lookupProviderConfig(config, providerID) {
+  const folded = String(providerID).toLowerCase()
+  for (const section of [config.provider, config.providers]) {
+    if (!isRecord(section)) continue
+    for (const key of Object.keys(section)) {
+      if (String(key).toLowerCase() !== folded) continue
+      if (isRecord(section[key])) return section[key]
+    }
+  }
+  return {}
+}
+
 function providerModels(providerID, catalog, config) {
-  const providerConfig = isRecord(config.provider?.[providerID])
-    ? config.provider[providerID]
-    : isRecord(config.providers?.[providerID])
-      ? config.providers[providerID]
-      : {}
+  const providerConfig = lookupProviderConfig(config, providerID)
   const catalogProvider = isRecord(catalog[String(providerID).toLowerCase()])
     ? catalog[String(providerID).toLowerCase()]
     : {}

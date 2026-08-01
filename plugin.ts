@@ -194,11 +194,30 @@ function mergeModel(existing: RawModel | undefined, override: RawModel): RawMode
 }
 
 function providerConfig(config: ConfigLike, providerID: string): ProviderConfig {
-  return config.provider?.[providerID] ?? config.providers?.[providerID] ?? {}
+  const folded = providerID.toLowerCase()
+  for (const section of [config.provider, config.providers]) {
+    if (!section) continue
+    for (const key of Object.keys(section)) {
+      if (key.toLowerCase() === folded) return section[key] ?? {}
+    }
+  }
+  return {}
+}
+
+// Canonicalize a provider id against the catalog: return the first catalog
+// provider key whose lowercase form matches (catalog casing wins), falling
+// back to the input id when the provider is absent from the catalog (e.g.
+// config-only providers like `78code-codex`).
+function canonicalProviderID(catalog: ModelsCatalog, id: string): string {
+  const folded = id.toLowerCase()
+  const existing = Object.keys(catalog).find((key) => key.toLowerCase() === folded)
+  return existing ?? id
 }
 
 function configuredProviderIDs(config: ConfigLike, catalog: ModelsCatalog): string[] {
-  const disabled = new Set(stringArray(config.disabled_providers))
+  const disabled = new Set(
+    stringArray(config.disabled_providers).map((id) => id.toLowerCase())
+  )
   const enabled = stringArray(config.enabled_providers)
   const explicit = Object.keys({
     ...(config.providers ?? {}),
@@ -214,7 +233,9 @@ function configuredProviderIDs(config: ConfigLike, catalog: ModelsCatalog): stri
     enabled.length > 0
       ? enabled
       : [...explicit, ...envConfigured, ...authConfigured]
-  return Array.from(new Set(ids)).filter((id) => !disabled.has(id))
+  return Array.from(
+    new Set(ids.map((id) => canonicalProviderID(catalog, id)))
+  ).filter((id) => !disabled.has(id.toLowerCase()))
 }
 
 function modelInputModalities(model: RawModel): string[] {
