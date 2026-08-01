@@ -29,6 +29,8 @@ Pin a specific version with `kilo plugin kilo-vision-bridge@0.1.1`.
 
 After install, restart Kilo. The plugin registers the `vision-agent` subagent and the `vision_analyze` tool on launch, and the `vision` skill is discovered straight from the installed package directory — no manual copy and no postinstall steps are needed.
 
+> **Why the plugin entry lands in `opencode.json`?** `kilo plugin` writes server-type plugin entries to `~/.config/kilo/opencode.json` (a legacy config filename, fully read by Kilo on every launch). This is Kilo's official installer behavior, not a bug. You can move the entry to `kilo.jsonc` if you prefer — both files are read and merged — but note that re-running `kilo plugin` (e.g. to upgrade) will create `opencode.json` again, since that is where the official installer manages entries.
+
 ## Quick start
 
 1. Install with `kilo plugin kilo-vision-bridge --global` and restart Kilo.
