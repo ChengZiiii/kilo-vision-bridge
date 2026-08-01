@@ -33,6 +33,15 @@ After install, restart Kilo. The plugin registers the `vision-agent` subagent an
 >
 > **Where does the package itself live?** `kilo plugin` downloads and manages the package under `~/.cache/kilo/packages/<name>@<tag>/` — Kilo's own package store, by official design. Do not move or delete it manually; use `kilo plugin` for upgrades (e.g. `kilo plugin kilo-vision-bridge --global --force`). The package store is a cache: clearing `~/.cache/kilo` only forces a re-download on the next `kilo plugin` run.
 
+### Uninstalling
+
+`kilo plugin` has no uninstall subcommand (Kilo's `kilo uninstall` removes Kilo itself, not plugins), so removal is manual — two steps:
+
+1. Remove the plugin entry from the config: delete `"kilo-vision-bridge"` from the `plugin` array in `~/.config/kilo/opencode.json` (or `kilo.jsonc`, wherever it lives). If the array becomes empty, remove the whole `plugin` key.
+2. Delete the installed package from Kilo's package store: `~/.cache/kilo/packages/kilo-vision-bridge@latest/`.
+
+Restart Kilo afterwards: the `vision-agent` subagent and `vision_analyze` tool disappear, and the `vision` skill is no longer listed.
+
 ## Quick start
 
 1. Install with `kilo plugin kilo-vision-bridge --global` and restart Kilo.
