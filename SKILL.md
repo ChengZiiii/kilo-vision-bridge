@@ -26,7 +26,7 @@ Delegates visual tasks to subagents with a vision-capable model.
 
 ## When NOT to invoke this skill
 
-You **MUST NOT** delegate to a vision subagent if the model is vision-capable. A multimodal (vision-capable) model receives image parts natively in this session: the plugin's messages transform leaves image `FilePart`s untouched on the native path, so you inspect images directly from the message rather than via a path. There is no `[vision:dropped-image]` marker for a multimodal model, and you **MUST NOT** spawn a `vision-*` subagent for it. The system prompt makes this explicit with a `[vision:native]` line; follow it and ignore any `[vision:model-script]` / `[vision:model-choice]` instructions.
+You **MUST NOT** delegate to a vision subagent if the model is vision-capable. A multimodal (vision-capable) model receives image parts natively in this session: the plugin's messages transform leaves image `FilePart`s untouched on the native path, so you inspect images directly from the message rather than via a path. There is no `[vision:dropped-image]` marker for a multimodal model, and you **MUST NOT** spawn a `vision-*` subagent for it. The system prompt makes this explicit with a `[vision:native]` line; follow it and ignore any `[vision:model-script]` instructions.
 
 ## Step 1. Detect
 
@@ -149,22 +149,17 @@ Prefer avoiding inline images altogether: when calling screenshot tools, pass th
 If you must handle an inline-only image, write the base64 payload to a file using Node via stdin or a temporary script.
 Do not embed the raw base64 payload in a shell command; screenshots may contain sensitive content that should not appear in shell history, transcripts, or logs.
 
-## Step 4. Pick model when necessary
+## Step 4. Vision model is user-configured
 
-The user's image vision-model choice is persisted so it carries over to future sessions:
+The plugin registers the single `vision-agent` subagent WITHOUT a default model; the plugin never writes `model` or `disable`. The vision model is specified by the **user** through the Kilo Code agent model override on `vision-agent` (e.g. `agent["vision-agent"].model = "minimax-cn-coding-plan/MiniMax-M3"`). Kilo falls back to the default model when no override is set.
 
-- Image choice: `~/.config/kilo/vision-model-image.txt`
+The bundled script `scripts/vision-models.mjs` is **read-only**: it lists which image-capable models are available to override with, and `--model` only validates an id — it never persists a choice and never writes a file.
 
-At startup the vision plugin reads this file and, if it holds a known model id, appends `[vision:model-choice] model=<provider/model>` to the system prompt and registers the single `vision-agent` subagent with that model.
+To see which models are available:
 
-Before asking the user, check whether a model choice is already available:
-
-- If the system prompt contains a `[vision:model-choice]` line, use the matching model id and delegate to the `vision-agent` subagent.
-- If the system prompt contains a `[vision:model-script]` line, extract the script command from it and run that command without extra flags. It returns a capped `models[]` shortlist, counts for the full discovered set, and any persisted choice discovered at runtime.
+- If the system prompt contains a `[vision:model-script]` line, extract the script command from it and run that command without extra flags. It returns a capped `models[]` shortlist plus counts for the full discovered set.
 - If there is no `[vision:model-script]` line but you are working in this repository, run `node scripts/vision-models.mjs` from the package root.
 - If the script returns `models: []`, do not invent or hardcode a fallback model. Report that no configured Kilo provider currently exposes an image-capable model, include the script warnings, and ask the user to connect a provider in Kilo, set the provider's API-key environment variable, or configure `enabled_providers` / `provider`.
-- If the script returns a persisted choice, use it directly.
-- If no persisted choice exists, ask the user to choose from the capped `models[]` returned by the script. Do not delegate to the `vision-agent` subagent until the user has selected a model. Do not treat the first ranked model as an implicit default. Do not ask from a large full model list. Do not use a hardcoded model list.
 
 <MODEL_PICKER_EXAMPLE>
 
@@ -172,20 +167,11 @@ Before asking the user, check whether a model choice is already available:
 node /path/to/kilo-vision-bridge/scripts/vision-models.mjs
 ```
 
-Use the returned capped `models[]` to build the picker:
+The returned capped `models[]` shows which models the user could override with:
 
 ```js
-const choices = available.models
-question({
-  questions: [{
-    header: "Vision model",
-    question: "I found several models that support vision tasks. Which model would you prefer for visual judgments this session?",
-    options: choices.map((model) => ({
-      label: model.pickerLabel,
-      description: model.pickerDescription
-    }))
-  }]
-})
+const available = JSON.parse(stdout)
+// available.models[] -> capped shortlist of image-capable models
 ```
 
 The script builds `models[]` by applying this picker algorithm:
@@ -194,19 +180,14 @@ The script builds `models[]` by applying this picker algorithm:
 - Rank by reasoning support, tool-call support, newer release date, larger context limit, then stable model id.
 - Keep only the latest model in each provider/model series before applying the picker cap. For example, GPT 5.5 supersedes GPT 5.4, and Kimi K2.7 supersedes Kimi K2.5.
 - Keep at most two models per provider and at most six picker entries total.
-- Include a valid persisted choice as `Saved choice` if present.
 
 The full discovered list is not included in default output. For diagnostics or fuzzy manual matching, run the script with `--all` and inspect `allModels[]`.
 
 </MODEL_PICKER_EXAMPLE>
 
-After the user answers:
+To validate a candidate id without changing anything, run the script with `--model "<provider/model>"`: it exits 0 only for a known image-capable model and writes no file.
 
-- The delegate is always the single `vision-agent` subagent — the script's `subagentType` is the constant `"vision-agent"`; the persisted choice drives its model.
-- Remember the choice for the rest of the session.
-- Persist the mapped model id by running the script with `--model "<provider/model>"`.
-- The change takes effect on the next launch: the plugin re-reads `vision-model-image.txt` at startup and registers `vision-agent` with the new model. The VS Code extension auto-refreshes on save, so no editor restart is needed.
-- If the user picks "Other", first validate exact `provider/model` answers by running the script with `--model "<provider/model>"`. For fuzzy matching, run the script with `--all`, map the answer to the closest `allModels[]` entry, or ask the user to clarify. Do not choose the first ranked model as a fallback; only persist a model id returned by the script.
+When a visual delegation needs a specific model, recommend one from the script's `models[]` and ask the user to set it as the Kilo Code agent model override on `vision-agent`. Do not treat the first ranked model as an implicit default, and do not use a hardcoded model list.
 
 **Model Script Response Shape:**
 
@@ -215,10 +196,6 @@ After the user answers:
 ```json
 {
   "ok": true,
-  "saved": false,
-  "persistedChoice": null,
-  "selectedModel": null,
-  "selectionRequired": true,
   "models": [
     {
       "model": "openai/gpt-5.5",
@@ -228,7 +205,6 @@ After the user answers:
     }
   ],
   "modelCount": 42,
-  "choiceFile": "/Users/me/.config/kilo/vision-model-image.txt",
   "configuredProviders": ["openai"],
   "providerSelection": {
     "source": "enabled_providers",
@@ -244,9 +220,13 @@ After the user answers:
 
 </MODEL_SCRIPT_RESPONSE_EXAMPLE>
 
+## Disabling the vision subagent
+
+To stop delegation entirely, disable `vision-agent` in Kilo Code: set `disable: true` on `agent["vision-agent"]`. Disabled agents do not appear in `kilo agent list` and cannot be delegated to. The plugin never writes `disable`, so the user's setting stays effective.
+
 ## Step 5. Delegate
 
-Spawn the single `vision-agent` subagent with the full visual task prompt. The subagent type is always `"vision-agent"` — it is a constant, not a per-model name — and the plugin configures it with the persisted vision model choice:
+Spawn the single `vision-agent` subagent with the full visual task prompt. The subagent type is always `"vision-agent"` — it is a constant, not a per-model name — and its model is configured by the user via the Kilo Code agent model override (the plugin registers it without a model):
 
 ```js
 task({
