@@ -454,11 +454,11 @@ ensureSkillInstalled()
 
 const plugin: Plugin = async () => ({
   config: async (cfg) => {
-    const catalog = readModelsCatalog()
-    const dynamicModels = discoverVisionModels(catalog, cfg as ConfigLike)
-    registeredModels = new Map(
-      dynamicModels.map((m) => [`${m.provider}/${m.model_id}`, m])
-    )
+  const catalog = readModelsCatalog()
+  const dynamicModels = discoverVisionModels(catalog, cfg as ConfigLike)
+  registeredModels = new Map(
+    dynamicModels.map((m) => [`${m.provider}/${m.model_id}`, m])
+  )
 
   // RV-1/RV-2/RV-3: build per-agent capability state from the registered
   // vision model set and each configured agent's model. Built BEFORE the
@@ -503,22 +503,22 @@ const plugin: Plugin = async () => ({
   // subagents. Non-delegation for a multimodal model is enforced by the
   // messages/system transforms and the skill's "When NOT to invoke" self-gate,
   // not by withholding registration.
-    cfg.agent ??= {}
-    for (const e of dynamicModels) {
-      const name = subagentName(e)
-      cfg.agent[name] ??= {}
-      Object.assign(cfg.agent[name], {
-        description: `Visual judgment subagent (${e.name}). Consumes a prompt-authored visual task with image paths and a task-specific JSON response template. Not coupled to any screenshot tool or UI framework - works with locally stored images supported by the model.`,
-        mode: "subagent",
-        model: `${e.provider}/${e.model_id}`,
-        temperature: 0.1,
-        prompt: bodyTpl
-          .replaceAll("{{model_name}}", e.name)
-          .replaceAll("{{provider}}", e.provider)
-          .replaceAll("{{model_id}}", e.model_id),
-        permission: PERMISSION,
-      })
-    }
+  cfg.agent ??= {}
+  for (const e of dynamicModels) {
+    const name = subagentName(e)
+    cfg.agent[name] ??= {}
+    Object.assign(cfg.agent[name], {
+      description: `Visual judgment subagent (${e.name}). Consumes a prompt-authored visual task with image paths and a task-specific JSON response template. Not coupled to any screenshot tool or UI framework - works with locally stored images supported by the model.`,
+      mode: "subagent",
+      model: `${e.provider}/${e.model_id}`,
+      temperature: 0.1,
+      prompt: bodyTpl
+        .replaceAll("{{model_name}}", e.name)
+        .replaceAll("{{provider}}", e.provider)
+        .replaceAll("{{model_id}}", e.model_id),
+      permission: PERMISSION,
+    })
+  }
   },
 
   // Source D: materialize user-dropped images as stable paths that the
