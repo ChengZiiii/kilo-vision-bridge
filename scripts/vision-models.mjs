@@ -1,11 +1,5 @@
 #!/usr/bin/env node
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs"
+import { existsSync, readFileSync, statSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { dirname, join, resolve } from "node:path"
 import { homedir } from "node:os"
@@ -22,7 +16,7 @@ function usage() {
 
 Options:
   --all                 Include all discovered image-capable models as allModels[].
-  --model <model>       Image-capable provider/model id to persist.
+  --model <model>       Validate an image-capable provider/model id (read-only; writes nothing).
   --cwd <path>          Directory used for project config discovery.
   --worktree <path>     Stop project config discovery at this directory.
   --config-dir <path>   Kilo config directory. Defaults to KILO_CONFIG_DIR or XDG config.
@@ -31,7 +25,10 @@ Options:
 
 Outputs JSON describing configured models from Kilo's cached catalog after
 applying Kilo provider config, saved auth, and matching provider environment
-variables. Returned models must support image input.`
+variables. Returned models must support image input. The script is READ-ONLY:
+it lists image-capable models and validates --model ids, and never persists a
+model choice. Configure the vision-agent model via the Kilo Code agent model
+override instead.`
 }
 
 function parseArgs(argv) {
@@ -145,10 +142,6 @@ function kiloModelsFile(args) {
       ? "models.json"
       : `models-${createHash("sha1").update(source).digest("hex")}.json`
   return join(kiloCacheDir(), file)
-}
-
-function choiceFile(configDir) {
-  return join(configDir, "vision-model-image.txt")
 }
 
 function isRecord(value) {
@@ -502,8 +495,8 @@ function mergeModel(existing, override) {
 // Case-insensitive id matching (RB-4): the cached catalog and Kilo configs may
 // use different casings for the same provider/model id (e.g. catalog stores
 // `MiniMax-M3` while the config writes `minimax-m3`). All lookups fold ids to
-// lowercase; outputs (model ids, persisted choice) keep the catalog's
-// canonical casing. The subagent type is the fixed constant "vision-agent".
+// lowercase; output model ids keep the catalog's canonical casing. The
+// subagent type is the fixed constant "vision-agent".
 
 function foldKey(record, key) {
   const folded = String(key).toLowerCase()
@@ -761,63 +754,28 @@ function addPickerEntry(result, providerCounts, entry, options = {}) {
   return true
 }
 
-function pickerModels(models, persistedChoice) {
+function pickerModels(models) {
   const ranked = latestModelsBySeries(models)
   const result = []
   const providerCounts = new Map()
 
   addPickerEntry(result, providerCounts, ranked[0])
-  if (persistedChoice) {
-    addPickerEntry(result, providerCounts, persistedChoice, { force: true })
-  }
 
   for (const entry of ranked) {
     if (result.length >= PICKER_MODEL_LIMIT) break
     addPickerEntry(result, providerCounts, entry)
   }
 
-  return result
-    .slice(0, PICKER_MODEL_LIMIT)
-    .map((entry) =>
-      pickerModelPayload(entry, {
-        saved: entry.model === persistedChoice?.model,
-      }),
-    )
+  return result.slice(0, PICKER_MODEL_LIMIT).map((entry) => pickerModelPayload(entry))
 }
 
-function pickerModelPayload(entry, options = {}) {
+function pickerModelPayload(entry) {
   const status = entry.status === "active" ? "" : `, ${entry.status}`
-  const tags = [
-    options.saved ? "Saved choice" : undefined,
-  ].filter(Boolean)
-  const suffix = tags.length > 0 ? ` (${tags.join(", ")})` : ""
   return {
     model: entry.model,
     subagentType: "vision-agent",
     pickerLabel: entry.pickerLabel,
-    pickerDescription: `${entry.name} - image${status}${suffix}`,
-  }
-}
-
-function readPersistedChoice(file, modelsByID) {
-  try {
-    if (!existsSync(file)) return undefined
-    const raw = readFileSync(file, "utf8").trim()
-    const entry =
-      modelsByID.get(raw) ?? modelsByID.get(String(raw).toLowerCase())
-    if (entry?.supportsImage) return entry
-  } catch {
-    return undefined
-  }
-}
-
-function choicePayload(entry) {
-  if (!entry) return undefined
-  return {
-    model: entry.model,
-    subagentType: "vision-agent",
-    pickerLabel: entry.pickerLabel,
-    pickerDescription: `${entry.name} - image`,
+    pickerDescription: `${entry.name} - image${status}`,
   }
 }
 
@@ -826,11 +784,6 @@ function validateSelectedModel(model, allModelsByID) {
   if (!entry) throw new Error(`Unknown image model: ${model}`)
   if (!entry.supportsImage) throw new Error(`Model ${model} does not support image input`)
   return entry
-}
-
-function persistSelection(file, entry) {
-  mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, `${entry.model}\n`)
 }
 
 function modelsByIDMap(entries) {
@@ -843,14 +796,8 @@ function modelsByIDMap(entries) {
 }
 
 function payload(input) {
-  const allModelsByID = modelsByIDMap(input.allModels)
-  const persistedChoice = readPersistedChoice(input.choiceFile, allModelsByID)
-  const picker = pickerModels(input.models, persistedChoice)
   const result = {
-    persistedChoice: choicePayload(persistedChoice) ?? null,
-    selectedModel: persistedChoice?.model ?? null,
-    selectionRequired: !persistedChoice && picker.length > 0,
-    models: picker,
+    models: pickerModels(input.models),
     modelCount: input.models.length,
     configuredProviders: input.providerSelection.ids,
     providerSelection: {
@@ -861,7 +808,6 @@ function payload(input) {
       enabledProviders: input.providerSelection.enabled,
       disabledProviders: input.providerSelection.disabled,
     },
-    choiceFile: input.choiceFile,
     sources: {
       modelsFile: input.modelsFile,
       configDir: input.configDir,
@@ -890,7 +836,6 @@ try {
   const configDir = kiloConfigDir(args)
   const dataDir = kiloDataDir(args)
   const modelsFile = kiloModelsFile(args)
-  const file = choiceFile(configDir)
   const catalog = readModelsCatalog(modelsFile)
   const authData = readAuthData(dataDir)
   const loaded = loadKiloConfig(args, configDir)
@@ -921,7 +866,6 @@ try {
     configDir,
     dataDir,
     modelsFile,
-    choiceFile: file,
     cwd: loaded.cwd,
     worktree: loaded.worktree,
     loadedFiles: loaded.loadedFiles,
@@ -930,14 +874,17 @@ try {
   }
 
   if (args.selectedModel) {
+    // Validation only (read-only): resolve the id against the discovered
+    // image-capable models. Nothing is written, so a known model reports
+    // ok: true and an unknown model exits non-zero with ok: false.
     const selected = validateSelectedModel(args.selectedModel, allModelsByID)
-    persistSelection(file, selected)
     console.log(
       JSON.stringify(
         {
           ok: true,
-          saved: true,
-          savedChoice: choicePayload(selected),
+          message: `Validation only: ${selected.model} is a known image-capable model. The script is read-only and wrote no file; set the vision-agent model via the Kilo Code agent model override.`,
+          model: selected.model,
+          subagentType: "vision-agent",
           ...payload(common),
         },
         null,
@@ -951,7 +898,6 @@ try {
     JSON.stringify(
       {
         ok: true,
-        saved: false,
         ...payload(common),
       },
       null,
