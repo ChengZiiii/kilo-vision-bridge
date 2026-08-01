@@ -151,19 +151,47 @@ Do not embed the raw base64 payload in a shell command; screenshots may contain 
 
 ## Step 4. Vision model is user-configured
 
-The `vision-agent` model is configured by the **user** through the Kilo Code agent model override on `vision-agent` (e.g. `agent["vision-agent"].model = "minimax-cn-coding-plan/MiniMax-M3"`).
+The vision model for BOTH delegation paths (the `vision_analyze` tool and the `vision-agent` subagent fallback) is configured by the **user** through the Kilo Code agent model override on `vision-agent` (e.g. `agent["vision-agent"].model = "minimax-cn-coding-plan/MiniMax-M3"`). It is a single knob: the tool's model source is exactly this override.
 
 Before delegating, check whether a model override is set on `vision-agent`. If the override is unset, ask the user to configure one — do not invent or hardcode a model, and do not pick a default.
 
 The plugin registers `vision-agent` without a model; Kilo falls back to the default model when none is set.
 
+**Routing note (tool-first):** delegate by calling the `vision_analyze` tool first (Step 5, path 1). Fall back to spawning the `vision-agent` subagent (Step 5, path 2) ONLY when the tool is not present in the current session's toolset, or the tool call fails with a provider, protocol, or HTTP error. A "model not configured" error from the tool must NOT trigger the fallback — surface it and direct the user to set `agent["vision-agent"].model`.
+
 ## Disabling the vision subagent
 
-To stop delegation entirely, disable `vision-agent` in Kilo Code: set `disable: true` on `agent["vision-agent"]`. Disabled agents do not appear in `kilo agent list` and cannot be delegated to. The plugin never writes `disable`, so the user's setting stays effective.
+To stop delegation entirely, disable `vision-agent` in Kilo Code: set `disable: true` on `agent["vision-agent"]`. Disabled agents do not appear in `kilo agent list` and cannot be delegated to; the `vision_analyze` tool is not registered either. The plugin never writes `disable`, so the user's setting stays effective.
 
-## Step 5. Delegate
+## Step 5. Delegate (tool-first)
 
-Spawn the single `vision-agent` subagent with the full visual task prompt. The subagent type is always `"vision-agent"` — it is a constant, not a per-model name — and its model is configured by the user via the Kilo Code agent model override (the plugin registers it without a model):
+### Path 1 — Primary: call the `vision_analyze` tool
+
+When the tool is present in the current session's toolset (text-only orchestrators see it; it exists in every session unless `vision-agent` is disabled), call `vision_analyze` directly with:
+
+```js
+vision_analyze({
+  images: [{ id: "<short contract id>", path: "<local image path>" }],
+  question: "<the exact visual question>",
+  response_template: "<JSON string defining the required response shape>",
+  response_rules: "<optional task-specific constraints>"
+})
+```
+
+You **MUST** assign each image a short contract ID such as `current`, `before`, `after`, `reference`, or `detail`, and use the same IDs in the response template.
+
+You **MUST** develop the `response_template` and `response_rules` per the template-design principles below. The tool reads the listed image files in-process (no subagent nesting) and returns exactly one JSON object matching the template.
+
+### Path 2 — Fallback: spawn the `vision-agent` subagent
+
+Fall back to spawning the single `vision-agent` subagent with the full visual task prompt ONLY when:
+
+- the `vision_analyze` tool is not present in the current session's toolset, or
+- the tool call fails with a provider, protocol, or HTTP error (e.g. `vision_analyze: provider error: ...`).
+
+A "model not configured" error (`vision_analyze: model not configured: ...`) MUST NOT trigger the fallback — report it to the user and ask them to set `agent["vision-agent"].model`.
+
+The subagent type is always `"vision-agent"` — it is a constant, not a per-model name — and its model is configured by the user via the Kilo Code agent model override (the plugin registers it without a model):
 
 ```js
 task({
@@ -214,11 +242,11 @@ Return exactly one JSON object shaped like this. Keep these keys exactly, replac
 - Each visual task **MUST** carries its own response shape inside the spawning prompt.
 - The spawning prompt shape **MUST** be just large enough to answer the current user request and should include its own uncertainty or failure fields.
 
-**Response-template Design Principles:**
+**Response-template Design Principles (apply to BOTH the tool and the subagent path):**
 
 Build the smallest JSON object that lets you answer the user.
-Include the template directly in the subagent prompt.
-The subagent must replace placeholder values with observed values and must not add fields.
+Include the template directly in the tool call (or subagent prompt).
+The vision model must replace placeholder values with observed values and must not add fields.
 
 Good templates usually include:
 
