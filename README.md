@@ -52,9 +52,14 @@ Your choice is saved to `~/.config/kilo/vision-model-image.txt` and reused in la
 
 Re-picking the vision model is very simple: just say, **"Select the vision model."**
 
-### 4. Vision-Capable Main Models
+### 4. Per-Model Vision Routing
 
-When your main model is already vision-capable (for example a model with image input in the catalog), native multimodality is usually the better path. If the top-level config `model` is a vision-capable `provider/model`, the plugin detects it at startup and skips registering the `vision-*` subagents — the skill stays loadable but self-gates in its body. You can also bypass the skill per task by prepending this to your prompt:
+The plugin routes images based on the **handling model** of each request, not a single global toggle. `vision-*` subagents are always registered regardless of the top-level `model`, so a text-only agent in a mixed config can always delegate.
+
+- **Multimodal (vision-capable) model.** Image `FilePart`s pass through untouched in the messages transform — the model sees images natively. The system transform injects a `[vision:native]` instruction telling the model to inspect images directly and NOT use the vision skill or spawn a `vision-*` subagent. No `[vision:dropped-image]` marker is produced.
+- **Text-only model.** Image `FilePart`s are materialized under the plugin's temp dir and rewritten to `[vision:dropped-image]` markers carrying the resulting path. The system transform injects `[vision:model-script]` (and `[vision:model-choice]` when a persisted choice exists) so the orchestrator picks a vision model and delegates to the matching `vision-*` subagent.
+
+Capability is resolved per request: the messages transform checks the message's `info.model` first, then the agent's configured model, then the top-level config `model` as a final fallback. Provider/model ids match case-insensitively. To bypass the skill per task on a text-only model, prepend this to your prompt:
 
 > You MUST not use the vision skill.
 
