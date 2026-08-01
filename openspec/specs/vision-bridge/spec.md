@@ -77,20 +77,20 @@ provider ids and model ids case-insensitively when intersecting configured
 providers with the cached catalog, when applying provider
 `whitelist`/`blacklist` filters, when evaluating the
 `configuredModelVisionCapable` predicate, and when resolving the persisted
-model choice. Output ids (subagent names, persisted choice content) `SHALL`
-use the catalog's canonical casing. The case-insensitive matching machinery
-(`foldKey` / lowercase key sets) `SHALL` remain intact, and RV-1/RV-2 routing
-`SHALL` reuse the same folded lookup for per-message and per-request
-capability checks so mixed-case ids keep working.
+model choice. Persisted choice content `SHALL` use the catalog's canonical
+casing. The case-insensitive matching machinery (`foldKey` / lowercase key
+sets) `SHALL` remain intact, and RV-1/RV-2 routing `SHALL` reuse the same
+folded lookup for per-message and per-request capability checks so mixed-case
+ids keep working.
 
 #### Scenario: Config id casing differs from catalog id
 
 Given a configured provider id `Minimax-Cn-Coding-Plan` and a catalog
 provider `minimax-cn-coding-plan` whose model entry is `MiniMax-M3`,
-when discovery runs,
-then the model is discovered, the subagent is named
-`vision-minimax-cn-coding-plan-MiniMax-M3`, and the choice file contains the
-canonical `minimax-cn-coding-plan/MiniMax-M3`.
+when discovery and choice resolution run,
+then the model is discovered, the persisted choice resolves to the canonical
+`minimax-cn-coding-plan/MiniMax-M3`, and `vision-agent` is registered with
+that canonical id.
 
 #### Scenario: Gate with mixed-case model string
 
@@ -150,14 +150,14 @@ then it documents `[vision:dropped-image]` with `path` under
 **Requirement:** `README.md` `SHALL` describe the plugin's purpose, the
 empirically verified installation methods for Kilo 7.4.17 (config `plugin`
 array, `~/.config/kilo/plugin/` directory, `kilo plugin <pkg>` command), the
-model selection flow, per-model vision routing (multimodal models receive
-image parts natively and do not delegate; text-only models receive
-`[vision:dropped-image]` markers and delegate to `vision-*` subagents;
-`vision-*` subagents are always registered regardless of the top-level
-model), the note that Kilo disables npm install/postinstall scripts (skill
-sync happens at module load), troubleshooting (`KILO_PURE`,
-`--log-level DEBUG`, plugin cache reset), and attribution to the upstream
-MIT project.
+single `vision-agent` subagent and its model-switching flow (update
+`vision-model-image.txt` via the script; takes effect on the next launch or
+VS Code config auto-refresh), per-model vision routing (multimodal models
+receive image parts natively and do not delegate; text-only models receive
+`[vision:dropped-image]` markers and delegate to `vision-agent`), the note
+that Kilo disables npm install/postinstall scripts (skill sync happens at
+module load), troubleshooting (`KILO_PURE`, `--log-level DEBUG`, plugin cache
+reset), and attribution to the upstream MIT project.
 
 #### Scenario: Installation method verified
 
@@ -167,27 +167,27 @@ during the port change (works / does not work on Kilo 7.4.17).
 
 ### Requirement: RB-8: Plugin loads and registers vision subagents on Kilo 7.4.17
 
-**Requirement:** The built plugin `SHALL` load without errors on Kilo 7.4.17
-and register `vision-*` subagents for the machine's configured image-capable
-models, visible via `kilo agent list`. Subagents `SHALL` be registered
-regardless of whether the top-level config `model` is vision-capable (RV-3);
-non-delegation for a multimodal model is enforced by the messages and system
-transforms plus the skill self-gate, not by withholding registration.
+**Requirement:** The built plugin `SHALL` load without errors on Kilo 7.4.17.
+When a persisted vision model choice exists, it `SHALL` register the single
+`vision-agent` subagent with that model, visible via `kilo agent list`; when
+no choice exists, it `SHALL NOT` register it. Exactly one `vision-*`
+subagent is ever registered.
 
 #### Scenario: Subagents appear
 
-Given the plugin is installed via at least one verified method,
+Given a persisted vision model choice and the plugin installed via at least
+one verified method,
 when `kilo agent list` runs,
-then it lists `vision-*` agents such as
-`vision-minimax-cn-coding-plan-MiniMax-M3`.
+then it lists exactly one `vision-*` subagent, `vision-agent`, configured
+with the chosen model.
 
 #### Scenario: Vision-capable main model still registers subagents
 
 Given the top-level config `model` is set to a vision-capable
-`provider/model` (image input modality in the catalog),
+`provider/model` and a persisted choice exists,
 when the plugin's `config` hook runs,
-then `vision-*` subagents are still registered (RV-3; so a text-only agent in
-the same config can delegate) and the skill remains loadable.
+then `vision-agent` is still registered (so a text-only agent in the same
+config can delegate) and the skill remains loadable.
 
 ### Requirement: RV-1: Image parts are rewritten only for text-only models
 
@@ -252,36 +252,16 @@ then `output.system` contains `[vision:model-script]` (and
 `[vision:model-choice]` when a persisted choice exists) and no native-vision
 instruction.
 
-### Requirement: RV-3: Vision subagents are always registered
-
-**Requirement:** The `config` hook `SHALL` register `vision-*` subagents for
-all discovered image-capable models regardless of the top-level `cfg.model`
-capability. The previous global skip (`configuredModelVisionCapable` early
-return) `SHALL` be removed; `configuredModelVisionCapable` remains as the
-shared capability predicate used by RV-1/RV-2 routing.
-
-#### Scenario: Multimodal main model still exposes vision subagents
-
-Given a config with vision-capable top-level `model` and an agent entry that
-explicitly configures a text-only model,
-when the config hook runs,
-then `vision-*` subagents are registered and the text-only agent can delegate
-to them.
-
-#### Scenario: Registration set unchanged
-
-Given a config with no top-level model,
-when the config hook runs,
-then the registered subagent set is identical to the pre-change behavior
-(all discovered image-capable models).
-
 ### Requirement: RV-4: Skill documents the routing split
 
 **Requirement:** `SKILL.md` `SHALL` state that multimodal models receive
 image parts natively and MUST NOT delegate (in addition to the existing
-self-gate), and that text-only models receive `[vision:dropped-image]`
-markers and delegate. The README `SHALL` describe the per-model routing
-behavior.
+self-gate), that text-only models receive `[vision:dropped-image]` markers
+and delegate, and that delegation `SHALL` target the single `vision-agent`
+subagent. It `SHALL` instruct the orchestrator to switch the vision model via
+`node scripts/vision-models.mjs --model <provider/model>` and note that the
+change takes effect on the next launch (the VS Code extension auto-refreshes
+on save). The README `SHALL` describe the per-model routing behavior.
 
 #### Scenario: Skill guidance matches routing behavior
 
@@ -289,4 +269,42 @@ Given a multimodal orchestrator and a dropped image,
 when the skill is consulted,
 then it instructs the model to inspect the image natively without spawning a
 `vision-*` subagent.
+
+### Requirement: RV-5: A single configurable vision subagent is registered
+
+**Requirement:** The `config` hook `SHALL` register exactly one subagent named
+`vision-agent` whose `model` is the persisted vision model choice
+(`~/.config/kilo/vision-model-image.txt`), resolved case-insensitively to the
+canonical catalog id. When no persisted choice exists, the hook `SHALL NOT`
+register `vision-agent`. Registration `SHALL` be re-evaluated on every launch
+(the config hook runs per startup), so model switches take effect on the next
+launch or, in the VS Code extension, on config auto-refresh.
+
+#### Scenario: Persisted choice registers the single subagent
+
+Given the choice file contains `minimax-cn-coding-plan/MiniMax-M3`,
+when the config hook runs,
+then `cfg.agent["vision-agent"].model` is
+`minimax-cn-coding-plan/MiniMax-M3` and no other `vision-*` subagents exist.
+
+#### Scenario: No choice means no registration
+
+Given no persisted vision model choice,
+when the config hook runs,
+then no `vision-agent` is registered.
+
+#### Scenario: Mixed-case choice resolves canonically
+
+Given the choice file contains `MINIMAX-CN-CODING-PLAN/minimax-m3` while the
+catalog stores `MiniMax-M3`,
+when the config hook runs,
+then `vision-agent` is registered with the canonical
+`minimax-cn-coding-plan/MiniMax-M3`.
+
+#### Scenario: Model switch applies on next launch
+
+Given the choice file is updated from model A to model B via
+`vision-models.mjs --model <provider/model>`,
+when kilo (re)starts or the VS Code config auto-refreshes,
+then `vision-agent` is registered with model B.
 
