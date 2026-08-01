@@ -5,29 +5,33 @@ import { dirname, join, resolve } from "node:path"
 import { homedir, tmpdir } from "node:os"
 import { createHash } from "node:crypto"
 
-// Resolve sibling data files relative to the bundle. When run from source,
-// `import.meta.url` is plugin.ts and the files sit next to it. When run from
-// the built dist/index.js, the files ship in the package root (one level up
-// from dist/) per `files` in package.json.
+// Resolve the data dir (skill source + skills.paths entry) relative to the
+// bundle. When run from source, `import.meta.url` is plugin.ts and SKILL.md
+// sits next to it. When run from the built dist/index.js, the npm package
+// root (one level up from dist/) has SKILL.md. Plugin-directory installs (a
+// lone dist/index.js copied into ~/.config/kilo/plugin/) have no SKILL.md
+// sibling, so the lookup falls back to bundleDir harmlessly: the skill sync
+// finds no source and the skills.paths scan finds no SKILL.md.
 const bundleDir = dirname(fileURLToPath(import.meta.url))
 const candidateDirs = [bundleDir, join(bundleDir, "..")]
 const dataDir =
-  candidateDirs.find(
-    (d) =>
-      existsSync(join(d, "subagent-body.md")) &&
-      existsSync(join(d, "scripts", "vision-models.mjs"))
-  ) ?? bundleDir
+  candidateDirs.find((d) => existsSync(join(d, "SKILL.md"))) ?? bundleDir
 
-// Degraded-mode fallback used when the sibling subagent-body.md is missing
-// (e.g. only dist/index.js was copied into the plugin auto-load dir). Without
-// this, module load throws and Kilo silently skips the whole plugin.
-const bodyTpl: string = (() => {
-  try {
-    return readFileSync(join(dataDir, "subagent-body.md"), "utf8")
-  } catch {
-    return "You are a vision subagent. Read each image file listed in the prompt, analyze only those images against the visual task, and respond with exactly one JSON object matching the response template. Do not emit prose or extra keys. Use null for anything that cannot be determined from the images."
-  }
-})()
+// Inlined vision-agent prompt (previously subagent-body.md). Placeholder-free.
+const bodyTpl: string = `You are a vision subagent. Your model is configured by the user through the Kilo Code agent model override. Read each image file listed in the prompt, analyze only those images against the visual task, and respond with exactly one JSON object matching the response template.
+
+## Input
+
+The prompt contains a Visual Task (the exact visual question), Images to Inspect (local image paths and why each matters), a Response Template (the exact JSON shape to return), and Response Rules (task-specific constraints).
+
+## Rules
+
+- Report what you actually observe; do not guess. Be specific: positions, colors, sizes, alignment, visibility, ordering, etc.
+- Include visual evidence wherever the template provides an evidence field; use \`null\` for facts that cannot be determined when the template permits null.
+- If an image cannot be analyzed (corrupted, wrong format, file not found, or unsupported image modality), fill the template's uncertainty/failure fields honestly, preserving the exact template shape.
+- Choose one concrete value for enum-like placeholders such as \`"pass | fail | inconclusive"\`.
+- Emit exactly one JSON object: no prose, markdown fences, commentary, or extra keys.
+- Do not spawn subagents. You are a leaf in the execution tree.`
 
 type VisionModelEntry = {
   provider: string
@@ -74,7 +78,6 @@ type ConfigLike = {
 
 type ModelsCatalog = Record<string, RawProvider>
 
-const VISION_MODELS_SCRIPT = join(dataDir, "scripts", "vision-models.mjs")
 let registeredModels = new Map<string, VisionModelEntry>()
 // RV-1/RV-2: folded (toLowerCase) "provider/model" keys of registered vision
 // models; agent-name -> vision-capable map; top-level default capability.
@@ -522,10 +525,11 @@ const plugin: Plugin = async () => ({
     }
   },
 
-  // The system transform tells a text-only orchestrator how to discover
-  // image-capable models. The script is read-only (listing only): no choice
-  // is persisted, and the vision-agent model is configured by the user via
-  // the Kilo Code agent model override.
+  // The system transform tells the orchestrator how images are routed in
+  // this session: a vision-capable model handles them natively, while a
+  // text-only model sees [vision:dropped-image] markers and delegates to the
+  // vision-agent subagent (model configured by the user via the Kilo Code
+  // agent model override). No model script or picker is involved.
   "experimental.chat.system.transform": async (input, output) => {
     // RV-2: input.model is Model (has providerID + id, NOT modelID).
     // Reuse the folded visionModelKeys lookup (RB-4 MODIFIED).
@@ -540,16 +544,13 @@ const plugin: Plugin = async () => ({
       output.system.push(
         "[vision:native] You receive image parts natively in this session. " +
           "Inspect images directly from the message. Do NOT use the vision skill, " +
-          "do NOT delegate visual tasks to a vision-* subagent, and ignore any " +
-          "[vision:model-script] instructions.",
+          "do NOT delegate visual tasks to a vision-* subagent.",
       )
       return
     }
-    output.system.push(
-      `[vision:model-script] Query available image-capable vision models with: node ${VISION_MODELS_SCRIPT}. ` +
-        `This script lists available image-capable models read-only; configure the vision-agent model via the Kilo Code agent model override instead. ` +
-        `Do not use a hardcoded model picker list.`,
-    )
+    // Text-only path: inject nothing. The vision skill (SKILL.md) instructs
+    // the orchestrator to delegate to the vision-agent subagent, whose model
+    // is configured by the user via the Kilo Code agent model override.
   },
 })
 

@@ -1,7 +1,7 @@
 {
   "name": "kilo-vision-bridge",
   "version": "0.1.0",
-  "description": "Dynamic visual-response skill for Kilo. Registers vision subagents from Kilo's configured image-capable models and teaches a text-only orchestrator to extract visual intent, design a task-specific JSON response template, and delegate to a vision subagent.",
+  "description": "Dynamic visual-response skill for Kilo. Registers the single vision-agent subagent (model configured by the user via the Kilo Code agent model override) and teaches a text-only orchestrator to extract visual intent, design a task-specific JSON response template, and delegate to the vision-agent subagent.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
@@ -11,16 +11,13 @@
   },
   "files": [
     "dist",
-    "docs/images",
     "SKILL.md",
     "scripts",
-    "subagent-body.md",
     "README.md"
   ],
   "scripts": {
     "prebuild": "rm -rf dist",
     "build": "bun build ./plugin.ts --outfile ./dist/index.js --target node --format esm --packages external",
-    "models": "node ./scripts/vision-models.mjs",
     "prepublishOnly": "bun run build",
     "postinstall": "node ./scripts/install-skill.mjs",
     "test": "node --test tests/*.test.mjs",
