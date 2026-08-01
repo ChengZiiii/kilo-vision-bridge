@@ -26,7 +26,7 @@ Delegates visual tasks to subagents with a vision-capable model.
 
 ## When NOT to invoke this skill
 
-You **MUST NOT** delegate to a vision subagent if the model is vision-capable. A multimodal (vision-capable) model receives image parts natively in this session: the plugin's messages transform leaves image `FilePart`s untouched on the native path, so you inspect images directly from the message rather than via a path. There is no `[vision:dropped-image]` marker for a multimodal model, and you **MUST NOT** spawn a `vision-*` subagent for it. The system prompt makes this explicit with a `[vision:native]` line; follow it and ignore any `[vision:model-script]` instructions.
+You **MUST NOT** delegate to a vision subagent if the model is vision-capable. A multimodal (vision-capable) model receives image parts natively in this session: the plugin's messages transform leaves image `FilePart`s untouched on the native path, so you inspect images directly from the message rather than via a path. There is no `[vision:dropped-image]` marker for a multimodal model, and you **MUST NOT** spawn a `vision-*` subagent for it. The system prompt makes this explicit with a `[vision:native]` line; follow it.
 
 ## Step 1. Detect
 
@@ -151,74 +151,11 @@ Do not embed the raw base64 payload in a shell command; screenshots may contain 
 
 ## Step 4. Vision model is user-configured
 
-The plugin registers the single `vision-agent` subagent WITHOUT a default model; the plugin never writes `model` or `disable`. The vision model is specified by the **user** through the Kilo Code agent model override on `vision-agent` (e.g. `agent["vision-agent"].model = "minimax-cn-coding-plan/MiniMax-M3"`). Kilo falls back to the default model when no override is set.
+The `vision-agent` model is configured by the **user** through the Kilo Code agent model override on `vision-agent` (e.g. `agent["vision-agent"].model = "minimax-cn-coding-plan/MiniMax-M3"`).
 
-The bundled script `scripts/vision-models.mjs` is **read-only**: it lists which image-capable models are available to override with, and `--model` only validates an id — it never persists a choice and never writes a file.
+Before delegating, check whether a model override is set on `vision-agent`. If the override is unset, ask the user to configure one — do not invent or hardcode a model, and do not pick a default.
 
-To see which models are available:
-
-- If the system prompt contains a `[vision:model-script]` line, extract the script command from it and run that command without extra flags. It returns a capped `models[]` shortlist plus counts for the full discovered set.
-- If there is no `[vision:model-script]` line but you are working in this repository, run `node scripts/vision-models.mjs` from the package root.
-- If the script returns `models: []`, do not invent or hardcode a fallback model. Report that no configured Kilo provider currently exposes an image-capable model, include the script warnings, and ask the user to connect a provider in Kilo, set the provider's API-key environment variable, or configure `enabled_providers` / `provider`.
-
-<MODEL_PICKER_EXAMPLE>
-
-```sh
-node /path/to/kilo-vision-bridge/scripts/vision-models.mjs
-```
-
-The returned capped `models[]` shows which models the user could override with:
-
-```js
-const available = JSON.parse(stdout)
-// available.models[] -> capped shortlist of image-capable models
-```
-
-The script builds `models[]` by applying this picker algorithm:
-
-- Keep models with any status except `deprecated` that support image input and text output; rank `active` models first.
-- Rank by reasoning support, tool-call support, newer release date, larger context limit, then stable model id.
-- Keep only the latest model in each provider/model series before applying the picker cap. For example, GPT 5.5 supersedes GPT 5.4, and Kimi K2.7 supersedes Kimi K2.5.
-- Keep at most two models per provider and at most six picker entries total.
-
-The full discovered list is not included in default output. For diagnostics or fuzzy manual matching, run the script with `--all` and inspect `allModels[]`.
-
-</MODEL_PICKER_EXAMPLE>
-
-To validate a candidate id without changing anything, run the script with `--model "<provider/model>"`: it exits 0 only for a known image-capable model and writes no file.
-
-When a visual delegation needs a specific model, recommend one from the script's `models[]` and ask the user to set it as the Kilo Code agent model override on `vision-agent`. Do not treat the first ranked model as an implicit default, and do not use a hardcoded model list.
-
-**Model Script Response Shape:**
-
-<MODEL_SCRIPT_RESPONSE_EXAMPLE>
-
-```json
-{
-  "ok": true,
-  "models": [
-    {
-      "model": "openai/gpt-5.5",
-      "subagentType": "vision-agent",
-      "pickerLabel": "openai/gpt-5.5",
-      "pickerDescription": "GPT-5.5 - image"
-    }
-  ],
-  "modelCount": 42,
-  "configuredProviders": ["openai"],
-  "providerSelection": {
-    "source": "enabled_providers",
-    "explicitProviders": ["openai"],
-    "envProviders": [],
-    "authProviders": [],
-    "enabledProviders": ["openai"],
-    "disabledProviders": []
-  },
-  "warnings": []
-}
-```
-
-</MODEL_SCRIPT_RESPONSE_EXAMPLE>
+The plugin registers `vision-agent` without a model; Kilo falls back to the default model when none is set.
 
 ## Disabling the vision subagent
 
