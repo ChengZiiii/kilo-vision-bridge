@@ -25,7 +25,7 @@ kilo plugin kilo-vision-bridge --global
 kilo plugin kilo-vision-bridge
 ```
 
-Pin a specific version with `kilo plugin kilo-vision-bridge@0.1.0`.
+Pin a specific version with `kilo plugin kilo-vision-bridge@0.1.1`.
 
 After install, restart Kilo. The plugin registers the `vision-agent` subagent and the `vision_analyze` tool on launch, and the `vision` skill is discovered straight from the installed package directory — no manual copy and no postinstall steps are needed.
 

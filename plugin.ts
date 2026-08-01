@@ -550,6 +550,18 @@ const plugin: Plugin = async () => ({
     cfgAny.skills.paths.push(dataDir)
   }
 
+  // Mark the pushed path trusted via skill_path_origins, mirroring what Kilo
+  // records for skills.paths entries declared in global config files. Without
+  // this, the package dir (outside the project config scope) is scanned as an
+  // untrusted file reference and every skill load fails with "blocked file
+  // reference outside project config scope" (verified on Kilo 7.4.17 npm
+  // install).
+  const cfgOrigins = cfg as ConfigLike & {
+    skill_path_origins?: Record<string, { trusted?: boolean; source?: string; root?: string }>
+  }
+  cfgOrigins.skill_path_origins ??= {}
+  cfgOrigins.skill_path_origins[dataDir] = { trusted: true, source: "plugin:vision" }
+
   // RV-6: register the single vision-agent subagent WITHOUT a default model.
   // The user supplies the model via the Kilo Code agent model override
   // (`agent["vision-agent"].model`); the plugin never writes `model` or
